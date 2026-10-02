@@ -31,7 +31,7 @@ body{
   background:var(--bg);color:var(--text);
   -webkit-font-smoothing:antialiased;min-height:100vh;
 }
-.wrap{max-width:1080px;margin:0 auto;padding:24px 18px 60px;}
+.wrap{max-width:900px;margin:0 auto;padding:24px 18px 60px;}
 
 /* ===== 顶部 ===== */
 .hero{
@@ -68,8 +68,11 @@ body{
 .recent{margin-bottom:12px;}
 .secTitle{font-size:14px;font-weight:700;color:var(--accent-deep);margin-bottom:10px;}
 .recentRow{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 6px;}
-.recentRow::-webkit-scrollbar{height:6px;}
-.recentRow::-webkit-scrollbar-thumb{background:#ddd0ee;border-radius:3px;}
+.recentRow::-webkit-scrollbar{height:4px;}
+.recentRow::-webkit-scrollbar-track{background:transparent;}
+.recentRow::-webkit-scrollbar-thumb{background:#f6c1d7;border-radius:2px;}
+.recentRow::-webkit-scrollbar-thumb:hover{background:#f0a8c6;}
+.recentRow{scrollbar-width:thin;scrollbar-color:#f6c1d7 transparent;}
 .recentCard{
   flex:0 0 auto;display:flex;align-items:center;gap:10px;
   background:#fff;border:1px solid var(--line);border-radius:999px;
