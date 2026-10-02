@@ -152,6 +152,7 @@ body{
 .todo{
   border:1.5px dashed #d9d2e5;border-radius:9px;padding:7px 14px;font-size:13px;
   color:#b7a9cf;user-select:none;
+  display:inline-flex;align-items:center;justify-content:center;
 }
 
 .empty{text-align:center;color:var(--text-sub);padding:40px 0;font-size:14px;display:none;}
@@ -248,7 +249,7 @@ function cardHTML(year,slot){
     <div class="btnRow">
       ${it.zuoti?`<a class="btn zuoti" href="${it.zuoti}" data-mode="做题模式">做题模式</a>`:'<span class="todo">暂未更新</span>'}
       ${it.fupan?`<a class="btn fupan" href="${it.fupan}" data-mode="复盘模式">复盘模式</a>`:'<span class="todo">暂未更新</span>'}
-      <a class="btn noteBtn" href="${it.note}" data-mode="手写笔记" title="手写笔记">✍️</a>
+      ${it.note?`<a class="btn noteBtn" href="${it.note}" data-mode="手写笔记" title="手写笔记">✍️</a>`:'<span class="todo" title="手写笔记待更新"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b7a9cf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span>'}
     </div>
   </div>`;
 }

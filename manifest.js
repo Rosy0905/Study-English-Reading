@@ -219,6 +219,11 @@ const LIBRARY = {
       label: "Text 4",
       fupan: "library/2017/2017-text4-复盘.html",
       note:  "notes.html?id=2017-text4",
+      underlay: [
+        "library/2017/2017-text4-article.png",
+        "library/2017/2017-text4-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     }
   ],
   2018: [
@@ -238,12 +243,22 @@ const LIBRARY = {
       label: "Text 3",
       fupan: "library/2018/2018-text3-复盘.html",
       note:  "notes.html?id=2018-text3",
+      underlay: [
+        "library/2018/2018-text3-article.png",
+        "library/2018/2018-text3-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     },
     {
       id: "2018-text4",
       label: "Text 4",
       fupan: "library/2018/2018-text4-复盘.html",
       note:  "notes.html?id=2018-text4",
+      underlay: [
+        "library/2018/2018-text4-article.png",
+        "library/2018/2018-text4-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     }
   ],
   2019: [
@@ -267,12 +282,22 @@ const LIBRARY = {
       label: "Text 1",
       fupan: "library/2021/2021-text1-复盘.html",
       note:  "notes.html?id=2021-text1",
+      underlay: [
+        "library/2021/2021-text1-article.png",
+        "library/2021/2021-text1-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     },
     {
       id: "2021-text3",
       label: "Text 3",
       fupan: "library/2021/2021-text3-复盘.html",
       note:  "notes.html?id=2021-text3",
+      underlay: [
+        "library/2021/2021-text3-article.png",
+        "library/2021/2021-text3-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     }
   ],
   2022: [],
@@ -283,6 +308,11 @@ const LIBRARY = {
       label: "Text 3",
       fupan: "library/2024/2024-text3-复盘.html",
       note:  "notes.html?id=2024-text3",
+      underlay: [
+        "library/2024/2024-text3-article.png",
+        "library/2024/2024-text3-question.png"
+      ],
+      labels: ["文章页", "题目页"]
     }
   ],
   2025: [
