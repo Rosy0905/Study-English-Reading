@@ -225,6 +225,7 @@
     /* 左栏：作者每步重建 focusPage，观察到就挂画布、按图切笔迹层 */
     var leftStage = document.getElementById('leftStage');
     var leftPanel = document.getElementById('leftPanel');
+    var rvGz = null;
     var obs = new MutationObserver(function () {
       requestAnimationFrame(function () {
         if (!engine) return;
@@ -234,7 +235,9 @@
           if (lp.hidden) lp.hidden = false;
           var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
           var slot = 'rv-left-' + asset;
-          engine.mountPaper('rv-left', slot, fp);
+          if (!rvGz) rvGz = rvGestures();
+          engine.mountPaper('rv-left', slot, fp, false, rvGz);
+          if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
           rvLeftSlot = slot;
         }
         placeRvSplit();
@@ -278,6 +281,12 @@
       layoutEl.appendChild(rvSplit);
       var startX = 0, startR = 0;
       function curR() {
+        /* 首选：按右栏实际渲染位置算比例（和 placeRvSplit 同一坐标系），
+           避免 inline 样式缺失/ minmax 顶住时 fr 比例与实际不符造成拖动跳变 */
+        var rpEl = layoutEl.querySelector('.rightPanel') || layoutEl.children[layoutEl.children.length - 1];
+        if (rpEl && layoutEl.clientWidth > 0 && rpEl.offsetLeft > 0) {
+          return Math.min(.9, Math.max(.1, rpEl.offsetLeft / layoutEl.clientWidth));
+        }
         var cols = (layoutEl.style.gridTemplateColumns || '').split(' ').filter(Boolean);
         if (cols.length === 2 && /fr/.test(cols[0]) && /fr/.test(cols[1])) {
           var a = parseFloat(cols[0]) || 44, b = parseFloat(cols[1]) || 56;
@@ -342,10 +351,12 @@
       if (!window.EkzInkBar) await loadScript(ROOT + 'assets/ink-toolbar.js');
       if (!engine) {
         if (IS_DO) {
+          var gz = rvGestures();
           engine = await window.EkzMark.init(PAPER, [
-            { el: document.getElementById('articleWrap'), slot: 'article' },
-            { el: document.getElementById('questionWrap'), slot: 'question' }
+            { el: document.getElementById('articleWrap'), slot: 'article', onPinch: gz.onPinch, onPinchStart: gz.onPinchStart },
+            { el: document.getElementById('questionWrap'), slot: 'question', onPinch: gz.onPinch, onPinchStart: gz.onPinchStart }
           ]);
+          if (rvZoom > 1) { zoomEl(document.getElementById('articleWrap'), rvZoom); zoomEl(document.getElementById('questionWrap'), rvZoom); }
         } else {
           engine = await window.EkzMark.init(PAPER + '-rv', []);
           setupRvFollow();
@@ -415,12 +426,18 @@
       placeSplit();
     }
     function currentRatio() {
+      /* 首选：按右栏实际渲染位置算比例（右栏 offsetLeft / 容器宽），
+         避免 inline 样式缺失/ minmax 顶住时 fr 比例与实际不符造成按下跳变 */
+      var rp = rightPanelEl();
+      if (rp && layoutEl.clientWidth > 0 && rp.offsetLeft > 0) {
+        return clamp(rp.offsetLeft / layoutEl.clientWidth);
+      }
       var cols = (layoutEl.style.gridTemplateColumns || '').split(' ').filter(Boolean);
       if (cols.length === 2 && /fr/.test(cols[0]) && /fr/.test(cols[1])) {
         var a = parseFloat(cols[0]) || 44, b = parseFloat(cols[1]) || 56;
-        return a / (a + b);
+        return clamp(a / (a + b));
       }
-      return .44;
+      return clamp(.44);
     }
     applySavedRatio();
     addEventListener('resize', placeSplit);
@@ -465,19 +482,35 @@
     });
   }
 
-  /* 去污染：把做题页底图换成数据包里的 dataURL。
-     file:// 直开时浏览器禁止 JS 读本地图片内容，canvas 会被"污染"，
-     带底图的导出（图片/PDF）全部会被浏览器拒绝——换成 dataURL 就没事了。
-     数据包由 scripts/make-imgdata.py 生成，只在需要时加载一次。 */
-  function deTaintImages() {
-    if (!IS_DO) return;
-    loadScript(ROOT + 'assets/pdfimg/' + PAPER + '.js').then(function () {
-      var data = window.EKZ_IMGDATA && window.EKZ_IMGDATA[PAPER];
-      if (!data) return;
-      var a = document.getElementById('articleImg'), q = document.getElementById('questionImg');
-      if (a && data[0]) a.src = data[0];
-      if (q && data[1]) q.src = data[1];
-    }).catch(function () {});
+  /* ---------- 双指捏合缩放（做题/复盘页）：缩底图宽度，围绕捏合中心 ----------
+     注意：做题/复盘页底图是作者模板内嵌 base64（dataURL），同源不污染 canvas，
+     带底图导出直接可用；绝不能替换成数据包里的无水印图——做题/复盘必须保留
+     作者原版（含贴纸），无水印底稿只用于笔记页 underlay。 */
+  var rvZoom = 1, z0 = 1;
+  try { rvZoom = Math.min(3, Math.max(1, parseFloat(localStorage.getItem('ekz-zoom-' + PAPER)) || 1)); } catch (_) {}
+  function zoomEl(el, z, cx, cy) {
+    if (!el) return;
+    var sc = el.closest('.scroll');
+    var r = sc ? sc.getBoundingClientRect() : null;
+    var px = r ? cx - r.left + sc.scrollLeft : 0, py = r ? cy - r.top + sc.scrollTop : 0;
+    var oldW = el.offsetWidth;
+    el.style.width = 'min(calc(100% * ' + z + '), calc(820px * ' + z + '))';
+    if (sc && oldW) {
+      var k = el.offsetWidth / oldW;
+      sc.scrollLeft = px * k - (cx - r.left);
+      sc.scrollTop = py * k - (cy - r.top);
+    }
+  }
+  function rvGestures() {
+    return {
+      onPinchStart: function () { z0 = rvZoom; },
+      onPinch: function (f, cx, cy) {
+        rvZoom = Math.min(3, Math.max(1, z0 * f));
+        zoomEl(document.getElementById('articleWrap'), rvZoom, cx, cy);
+        zoomEl(document.getElementById('questionWrap'), rvZoom, cx, cy);
+        try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
+      }
+    };
   }
 
   /* ---------- 启动：迁移旧数据 + 默认进入批注模式 ---------- */
@@ -486,7 +519,6 @@
       if (!window.ekzDB) await loadScript(ROOT + 'assets/ekz-db.js');
       await window.ekzDB.migrate();
     } catch (_) {}
-    deTaintImages();
     enterInk();
   })();
 })();

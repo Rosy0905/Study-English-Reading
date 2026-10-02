@@ -94,7 +94,7 @@
       return null;
     }
 
-    function mountPaper(key, slot, host, readonly) {
+    function mountPaper(key, slot, host, readonly, gest) {
       let p = papers[key];
       if (!p) {
         p = papers[key] = { key: key, slot: slot, paper: null, readonly: !!readonly, undoStack: [], redoStack: [] };
@@ -106,6 +106,7 @@
         p.paper = window.EkzInkPaper.create({
           host: host, strokes: arr, state: state,
           toast: opts.toast, readonly: p.readonly,
+          onPinch: gest && gest.onPinch, onPinchStart: gest && gest.onPinchStart,
           onDirty: function () {
             /* 每写完一笔压进撤销栈（之前漏了这步，↶撤销/↷重做一直是空的） */
             activeKey = key;
@@ -156,17 +157,24 @@
       if (op.t === 'add') {
         const i = p.paper.strokes.indexOf(op.s);
         if (i >= 0) p.paper.strokes.splice(i, 1);
-        p.redoStack.push({ t: 'add', s: op.s });
+        p.redoStack.push(op);
       } else if (op.t === 'clear') {
-        p.redoStack.push({ t: 'clear', s: p.paper.strokes.splice(0) });
+        /* 撤销"清空" = 把被清掉的笔画放回来 */
+        p.paper.strokes.push.apply(p.paper.strokes, op.s);
+        p.redoStack.push(op);
       }
       p.paper.redraw(); markDirty(p.key); return true;
     }
     function redo() {
       const p = activeEntry(); if (!p) return false;
       const op = p.redoStack.pop(); if (!op) return false;
-      if (op.t === 'add') p.paper.strokes.push(op.s);
-      else if (op.t === 'clear') p.paper.strokes.push.apply(p.paper.strokes, op.s);
+      if (op.t === 'add') {
+        p.paper.strokes.push(op.s);
+        p.undoStack.push(op);   /* 重做完成要压回撤销栈，否则再撤销就空了 */
+      } else if (op.t === 'clear') {
+        op.s = p.paper.strokes.splice(0);
+        p.undoStack.push(op);
+      }
       p.paper.redraw(); markDirty(p.key); return true;
     }
     function clearActive() {
@@ -190,7 +198,7 @@
     }
 
     slots.forEach(function (cfg) {
-      if (cfg.el) mountPaper(cfg.slot, cfg.slot, cfg.el, cfg.readonly);
+      if (cfg.el) mountPaper(cfg.slot, cfg.slot, cfg.el, cfg.readonly, cfg);
     });
 
     return { setEditing, setTool, setSize, setFinger, setInkHidden,

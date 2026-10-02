@@ -184,7 +184,29 @@
 
     /* ---- 指针事件（同笔记页） ---- */
     function syncTouchAction() {
-      cv.style.touchAction = (editing && state.finger) ? 'none' : 'pan-y';
+      /* 编辑态禁掉浏览器默认手势：笔写字时手掌蹭屏页面绝不移动。
+         滚动 / 双指缩放由下面的手势层手动接管；阅读模式交还浏览器。 */
+      cv.style.touchAction = editing ? 'none' : 'auto';
+    }
+    /* ---- 手势层：笔只写字；手指单指滚动、双指捏合缩放（笔优先防手掌误触） ----
+       宿主可通过 opts.onPinchStart() / opts.onPinch(factor, cx, cy) 接入缩放。 */
+    let penActive = false;                 /* 笔落下期间，触摸手势全部冻结 */
+    const touches = new Map();             /* pointerId -> {x,y} */
+    let panLast = null, pinch0 = null;
+    const smoothSaved = new Set();
+    function scrollAncestor(el) {
+      let n = el && el.parentElement;
+      while (n) {
+        const s = getComputedStyle(n);
+        if (/(auto|scroll)/.test(s.overflowY) && n.scrollHeight > n.clientHeight + 2) return n;
+        n = n.parentElement;
+      }
+      return null;
+    }
+    function gestureCleanup() {
+      panLast = null; pinch0 = null; touches.clear();
+      smoothSaved.forEach(function (sc) { sc.style.scrollBehavior = ''; });
+      smoothSaved.clear();
     }
     function rel(e) {
       const r = cv.getBoundingClientRect();
@@ -200,8 +222,30 @@
       return true; /* 触控笔 */
     }
     cv.addEventListener('pointerdown', e => {
-      if (readonly || !editing || state.hidden || !canDraw(e)) return;
+      if (readonly || !editing || state.hidden) return;
+      /* ---- 手指手势（未开手指写字时）：笔优先防误触；单指滚动、双指缩放 ---- */
+      if (e.pointerType === 'touch' && !state.finger) {
+        if (penActive) return;
+        e.preventDefault();
+        try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 1) {
+          panLast = { x: e.clientX, y: e.clientY };
+          const sc = scrollAncestor(cv);
+          if (sc && getComputedStyle(sc).scrollBehavior === 'smooth') {
+            sc.style.scrollBehavior = 'auto'; smoothSaved.add(sc);
+          }
+        } else if (touches.size === 2) {
+          const p = [...touches.values()];
+          pinch0 = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1, cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2 };
+          panLast = null;
+          if (opts.onPinchStart) opts.onPinchStart();
+        }
+        return;
+      }
+      if (!canDraw(e)) return;
       e.preventDefault();
+      if (e.pointerType !== 'mouse') { penActive = true; gestureCleanup(); }
       try { cv.setPointerCapture(e.pointerId); } catch (_) {}
       holdFired = false;
       lastPointerRel = rel(e);
@@ -218,6 +262,22 @@
       syncTouchAction();
     });
     cv.addEventListener('pointermove', e => {
+      /* ---- 手势移动：单指滚动 / 双指缩放 ---- */
+      if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+        e.preventDefault();
+        const t = touches.get(e.pointerId);
+        const dx = e.clientX - t.x, dy = e.clientY - t.y;
+        t.x = e.clientX; t.y = e.clientY;
+        if (touches.size === 1 && panLast) {
+          const sc = scrollAncestor(cv);
+          if (sc) { sc.scrollLeft -= dx; sc.scrollTop -= dy; }
+        } else if (touches.size >= 2 && pinch0 && opts.onPinch) {
+          const p = [...touches.values()];
+          const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+          opts.onPinch(d / pinch0.d, pinch0.cx, pinch0.cy);
+        }
+        return;
+      }
       if (!cur) return;
       const touching = (e.buttons > 0) || (cur && cur.tool === 'er');
       if (touching && (state.tool === 'er' || cur.tool === 'er')) {
@@ -261,7 +321,17 @@
       if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) { cur.pts.push({ x, y, p }); }
       drawLive();
     });
-    function endPointer() {
+    function endPointer(e) {
+      /* ---- 手势收尾 ---- */
+      if (e && e.pointerType === 'touch' && touches.has(e.pointerId)) {
+        touches.delete(e.pointerId);
+        if (touches.size === 1) { const p = [...touches.values()][0]; panLast = { x: p.x, y: p.y }; pinch0 = null; }
+        else if (touches.size === 0) { panLast = null; pinch0 = null; }
+        smoothSaved.forEach(function (sc) { sc.style.scrollBehavior = ''; });
+        smoothSaved.clear();
+        return;
+      }
+      if (e && e.pointerType === 'pen') penActive = false;
       clearTimeout(holdTimer); holdTimer = null; holdStart = null;
       stopHlHold(); hlStraightened = false; hlMoveAnchor = null;
       if (!cur) return;

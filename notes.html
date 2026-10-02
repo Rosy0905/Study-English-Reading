@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>手写笔记</title>
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -56,9 +56,10 @@ body{background:#f7f4fb;font-family:'PingFang SC','Microsoft YaHei',sans-serif;c
   -webkit-overflow-scrolling:touch;padding:18px 14px 40px}
 #paperWrap{position:relative;margin:0 auto;background:#fff;
   border-radius:6px;box-shadow:0 4px 24px rgba(46,38,64,.12);
-  /* 宽度=可用高度×底稿比例，撑满视口；窄屏则取 100% */
-  --ar:.707;aspect-ratio:var(--ar);
-  width:min(100%,calc((100vh - 128px)*var(--ar)));
+  /* 宽度=可用高度×底稿比例（双页并排约1.414），撑满视口；窄屏则取 100%。
+     --z 是双指捏合缩放倍数，>1 时超宽部分横向滚动 */
+  --ar:1.414;--z:1;aspect-ratio:var(--ar);
+  width:min(calc(100% * var(--z)),calc((100vh - 128px)*var(--ar)*var(--z)));
   opacity:0;transition:opacity .12s}
 #paperWrap.ready{opacity:1}
 @media(max-width:760px){#paperWrap{border-radius:0;box-shadow:none}}
@@ -82,7 +83,7 @@ body{background:#f7f4fb;font-family:'PingFang SC','Microsoft YaHei',sans-serif;c
   </div>
 </div>
 
-<script src="manifest.js"></script>
+<script src="manifest.js?v=20261002b"></script>
 <script src="assets/ekz-db.js"></script>
 <script src="assets/ink-toolbar.js"></script>
 <script src="assets/ekz-export.js"></script>
@@ -197,22 +198,24 @@ window.addEventListener('beforeunload',()=>{if(dirty)doSave();});
   /* 撤销/重做 */
   function undo(){
     const op=undoStack.pop();if(!op)return;
-    if(op.t==='add'){const i=strokes.indexOf(op.s);if(i>=0)strokes.splice(i,1);redoStack.push({t:'add',s:op.s});}
-    else if(op.t==='clear'){redoStack.push({t:'clear',s:strokes.splice(0)});}
+    if(op.t==='add'){const i=strokes.indexOf(op.s);if(i>=0)strokes.splice(i,1);redoStack.push(op);}
+    else if(op.t==='clear'){strokes.push.apply(strokes,op.s);redoStack.push(op);}
     paper.redraw();markDirty();
   }
   function redo(){
     const op=redoStack.pop();if(!op)return;
-    if(op.t==='add')strokes.push(op.s);
-    else if(op.t==='clear')strokes.push.apply(strokes,op.s);
+    if(op.t==='add'){strokes.push(op.s);undoStack.push(op);}
+    else if(op.t==='clear'){op.s=strokes.splice(0);undoStack.push(op);}
     paper.redraw();markDirty();
   }
 
   /* 底稿：左边文章页、右边题目页，可一键显隐 */
   const UNDERLAYS=(item&&Array.isArray(item.underlay))?item.underlay:[];
-  /* 去污染：底稿换成数据包里的 dataURL（file:// 直开时 canvas 才不会被"污染"，
-     带底稿的导出图片/PDF 才能成功）。数据包由 scripts/make-imgdata.py 生成。 */
-  if(UNDERLAYS.length){
+  /* 去污染：file:// 直开时浏览器把本地图片当成跨源，canvas 会"污染"导致导出失败，
+     所以 file:// 下要换成数据包里的 dataURL（scripts/make-imgdata.py 生成）。
+     而 https/http（GitHub Pages 等）下图片与页面同源，不存在污染，直接用 png 路径即可，
+     免去二次下载大 base64 的等待。 */
+  if(UNDERLAYS.length && location.protocol==='file:'){
     const ds=document.createElement('script');
     ds.src='assets/pdfimg/'+NOTE_ID+'.js';
     ds.onload=function(){
@@ -250,11 +253,25 @@ window.addEventListener('beforeunload',()=>{if(dirty)doSave();});
   }
 
   /* 纸张（共用引擎） */
+  let zoom=1, z0=1;
   window.paper=window.EkzInkPaper.create({
     host:document.getElementById('paperWrap'),
     strokes:strokes,
     state:bar.st,
     toast:bar.toast,
+    /* 双指捏合缩放：围绕捏合中心缩放并补偿滚动 */
+    onPinchStart:function(){ z0=zoom; },
+    onPinch:function(f,cx,cy){
+      const desk=document.getElementById('desk'), wrap=document.getElementById('paperWrap');
+      const r=desk.getBoundingClientRect();
+      const px=cx-r.left+desk.scrollLeft, py=cy-r.top+desk.scrollTop;
+      const oldW=wrap.offsetWidth;
+      zoom=Math.min(3,Math.max(1,z0*f));
+      wrap.style.setProperty('--z',zoom.toFixed(3));
+      const k=oldW?wrap.offsetWidth/oldW:1;
+      desk.scrollLeft=px*k-(cx-r.left);
+      desk.scrollTop=py*k-(cy-r.top);
+    },
     onDirty:function(){
       undoStack.push({t:'add',s:strokes[strokes.length-1]});
       redoStack.length=0;

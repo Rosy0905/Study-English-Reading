@@ -9,7 +9,7 @@
   const style = document.createElement('style');
   style.id = 'ekz-export-style';
   style.textContent =
-    '#ekz-exMask{position:fixed;inset:0;z-index:9985;background:rgba(73,32,50,.28);display:none;align-items:center;justify-content:center}' +
+    '#ekz-exMask{position:fixed;inset:0;z-index:9985;background:rgba(28,22,26,.28);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center}' +
     '#ekz-exMask.open{display:flex}' +
     '#ekz-exCard{background:#fff;border:1px solid #f8bbd0;border-radius:16px;box-shadow:0 12px 40px rgba(120,70,95,.3);' +
     'width:min(420px,92vw);max-height:86vh;overflow-y:auto;padding:18px 18px 14px;font-family:inherit}' +
