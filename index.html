@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>英语一真题阅读资料库</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{
+  --bg:#f7f4fb;
+  --panel:#ffffff;
+  --header-bg:#e8e0f5;
+  --accent:#8b6fc4;
+  --accent-deep:#6a4fa3;
+  --accent-soft:#efe9f9;
+  --accent-line:#d9cbf0;
+  --line:#e0d6f0;
+  --fav-border:#e8a8c8;
+  --fav-bg:#fdf2f7;
+  --fav-active:#d9739f;
+  --text:#2e2640;
+  --text-sub:#7a6f8f;
+  --ok:#6bbf8a;
+  --ok-bg:#eef8f1;
+  --ok-line:#cdeada;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:-apple-system,'PingFang SC','Segoe UI','Microsoft YaHei',sans-serif;
+  background:var(--bg);color:var(--text);
+  -webkit-font-smoothing:antialiased;min-height:100vh;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 18px 60px;}
+
+/* ===== 顶部 ===== */
+.hero{
+  background:linear-gradient(135deg,#f3edfa,#fceef5);
+  border:1px solid #e8ddf3;border-radius:18px;
+  padding:28px 28px 22px;margin-bottom:20px;
+}
+.hero h1{font-size:24px;color:var(--accent-deep);letter-spacing:1px;}
+.hero p{color:var(--text-sub);font-size:13px;margin-top:6px;line-height:1.6;}
+.searchRow{margin-top:16px;display:flex;gap:10px;}
+#search{
+  flex:1;border:1.5px solid var(--line);border-radius:10px;
+  padding:7px 13px;font-size:14px;color:var(--text);
+  background:#fff;outline:none;transition:border .15s,box-shadow .15s;
+}
+#search:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(139,111,196,.15);}
+#search::placeholder{color:#b7a9cf;}
+.clearBtn{
+  border:1px solid var(--line);background:#fff;border-radius:12px;
+  padding:0 16px;font-size:13px;color:var(--text-sub);cursor:pointer;display:none;
+}
+.clearBtn:hover{color:var(--accent-deep);border-color:var(--accent);}
+.clearBtn.show{display:block;}
+/* ===== 顶栏三按钮：各自底色 + 明显的 hover 反馈 ===== */
+#bkImportBtn,#bkExportBtn,#clearBtn{transition:background .15s,box-shadow .15s,border-color .15s,color .15s}
+#bkImportBtn{background:#eaf3fb;border-color:#cfe3f5;color:#3a6ea8;box-shadow:0 1px 4px rgba(58,110,168,.08)}
+#bkImportBtn:hover{background:#dbe9f8;border-color:#aecdec;color:#2d5a8c;box-shadow:0 2px 8px rgba(58,110,168,.16)}
+#bkExportBtn{background:#f0e9fa;border-color:#dccdf3;color:#6a4fa3;box-shadow:0 1px 4px rgba(106,79,163,.08)}
+#bkExportBtn:hover{background:#e5d9f7;border-color:#c0a8ec;color:#58409a;box-shadow:0 2px 8px rgba(106,79,163,.16)}
+#clearBtn{background:#fdf1f5;border-color:#f3d7e3;color:#b0577e;box-shadow:0 1px 4px rgba(176,87,126,.07)}
+#clearBtn:hover{background:#fbdfe9;border-color:#efbccf;color:#8f3d62;box-shadow:0 2px 8px rgba(176,87,126,.14)}
+
+/* ===== 最近学习 ===== */
+.recent{margin-bottom:12px;}
+.secTitle{font-size:14px;font-weight:700;color:var(--accent-deep);margin-bottom:10px;}
+.recentRow{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 6px;}
+.recentRow::-webkit-scrollbar{height:6px;}
+.recentRow::-webkit-scrollbar-thumb{background:#ddd0ee;border-radius:3px;}
+.recentCard{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  background:#fff;border:1px solid var(--line);border-radius:999px;
+  padding:7px 16px;cursor:pointer;transition:border .15s,background .15s;
+}
+.recentCard:hover{border-color:var(--accent);background:#fbf9fe;}
+.recentCard .rcName{font-size:14.5px;font-weight:600;color:var(--text);white-space:nowrap;}
+.recentCard .rcDate{font-size:12.5px;color:#a99dbc;white-space:nowrap;}
+
+/* ===== 年份分组（默认全部展开） ===== */
+.yearSec{margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;}
+.yearHead{
+  display:flex;align-items:center;gap:10px;padding:14px 18px;
+  background:#efe8f9;
+  border-bottom:1px solid var(--accent-line);
+}
+.yearHead h2{font-size:17px;color:var(--text);}
+.cnt{font-size:12px;color:var(--text-sub);}
+.cnt b{color:var(--accent-deep);font-weight:700;}
+.yearBody{padding:14px 14px 16px;}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+
+/* 还没收录内容的年份：一行带过 */
+.yearRow{
+  display:flex;align-items:center;gap:10px;background:#fff;
+  border:1px dashed var(--line);border-radius:12px;
+  padding:10px 16px;color:#b0a6c4;font-size:13.5px;margin-bottom:8px;
+}
+.yearRow b{color:#8f84a8;font-size:14.5px;}
+.yearRow .pill{font-size:11.5px;background:#f4f0fa;border-radius:999px;padding:2px 10px;color:#a99dbc;}
+
+/* ===== 篇目卡片 ===== */
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:13px 15px;position:relative;
+  transition:box-shadow .15s,transform .15s;
+}
+.card.have{border-left:4px solid var(--accent);}
+.card.have.faved{background:#fef9fb;border-color:#f2dbe7;border-left-color:#eebcd3;}
+.card.missing{background:#fcfbfe;}
+.cardTop{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-right:4px;}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+.card.have .dot{background:var(--accent);}
+.card.missing .dot{background:#d5cede;}
+.card .name{font-size:15.5px;font-weight:700;flex:1;min-width:0;}
+.donePill{
+  border:1px solid var(--line);background:#fff;color:var(--text-sub);
+  border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer;flex:0 0 auto;
+  transition:background .13s,color .13s,border .13s;
+}
+.donePill:hover{border-color:var(--ok);color:var(--ok);}
+.donePill.on{background:var(--ok-bg);border-color:var(--ok-line);color:#3e8a5f;font-weight:600;}
+.starBtn{
+  border:0;background:transparent;cursor:pointer;font-size:17px;line-height:1;
+  padding:2px 3px;border-radius:8px;color:#d4c7e8;flex:0 0 auto;
+  transition:transform .12s,color .12s;
+}
+.starBtn:hover{transform:scale(1.15);}
+.starBtn.on{color:var(--fav-active);}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.btn{
+  border:1px solid var(--accent-line);background:var(--accent-soft);color:var(--accent-deep);
+  border-radius:9px;padding:7px 14px;font-size:13px;cursor:pointer;font-weight:600;
+  text-decoration:none;display:inline-flex;align-items:center;gap:5px;
+  transition:background .13s,border .13s,transform .13s;
+}
+.btn:hover{background:var(--accent-soft);}
+/* 做题：紫偏粉 */
+.btn.zuoti{background:#f0e9fa;border-color:#dccdf3;color:#6a4fa3;}
+.btn.zuoti:hover{background:#e7dcf7;border-color:#8b6fc4;}
+/* 复盘：近似但偏蓝一点的紫 */
+.btn.fupan{background:#edeafb;border-color:#d4cdf4;color:#5a4fc0;}
+.btn.fupan:hover{background:#e2ddf8;border-color:#7a6fd0;}
+/* 笔记：更浅的蓝 + 实线框，只有✍️ */
+.btn.noteBtn{
+  background:#f0f9ff;border:1px solid #c8e4f8;color:#6fb1e8;
+  font-size:15px;justify-content:center;
+}
+.btn.noteBtn:hover{background:#e3f2fd;border-color:#8fc6ee;}
+.todo{
+  border:1.5px dashed #d9d2e5;border-radius:9px;padding:7px 14px;font-size:13px;
+  color:#b7a9cf;user-select:none;
+}
+
+.empty{text-align:center;color:var(--text-sub);padding:40px 0;font-size:14px;display:none;}
+.empty.show{display:block;}
+
+footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-height:1.8;}
+
+@media(max-width:650px){
+  .hero{padding:20px 16px;}
+  .hero h1{font-size:20px;}
+  .grid{grid-template-columns:1fr;}
+  .yearHead h2{font-size:16px;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>英语一真题阅读资料库</h1>
+    <p>2010 – 2026 · 每篇含做题模式 / 复盘模式 / 手写笔记 · 作者持续更新中</p>
+    <div class="searchRow">
+      <input id="search" type="search" placeholder="搜年份或篇目，比如 2014、text2…" autocomplete="off">
+      <button class="clearBtn show" id="bkImportBtn" title="从备份JSON文件恢复（覆盖同名笔记）">导入</button>
+      <button class="clearBtn show" id="bkExportBtn" title="所有批注和笔记打包成一个JSON文件下载">导出</button>
+      <button class="clearBtn" id="clearBtn">清空</button>
+      <a class="clearBtn show" href="guide.html" style="text-decoration:none;display:flex;align-items:center" title="英语备考攻略（点开查看）">📖 攻略</a>
+    </div>
+  </div>
+
+  <div class="recent" id="recentSec" style="display:none">
+    <div class="secTitle">🕐 最近学习</div>
+    <div class="recentRow" id="recentRow"></div>
+  </div>
+
+  <div id="yearList"></div>
+
+  <div class="empty" id="emptyTip">没有找到匹配的篇目，换个关键词试试？(｡•́︿•̀｡)</div>
+
+  <footer>
+    绿点 = 已收录 · 星标 = 收藏 · 学完 = 标记完成<br>
+    笔记保存在这台电脑的浏览器里，重要笔记记得用顶部「笔记备份」导出哦
+  </footer>
+</div>
+
+<!-- 笔记备份弹窗 -->
+<div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
+
+<script src="assets/ekz-db.js"></script>
+<script src="assets/ekz-export.js"></script>
+<script src="assets/ekz-pdf.js"></script>
+<script src="manifest.js"></script>
+<script>
+const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(_){}};
+
+let favs=load(LS_FAV,[]), doneList=load(LS_DONE,[]), recent=load(LS_RECENT,[]);
+
+/* 每年固定 Text 1-4 个槽位，manifest 里有的填入，没有的显示待补充 */
+function slotsOf(year){
+  const items=LIBRARY[year]||[];
+  const byNum={};
+  const extra=[];
+  items.forEach(it=>{
+    const m=/text\s*(\d+)/i.exec(it.label||'');
+    if(m&&!byNum[m[1]])byNum[m[1]]=it;else extra.push(it);
+  });
+  const slots=[];
+  for(let n=1;n<=4;n++)slots.push({num:n,item:byNum[String(n)]||null});
+  extra.forEach(it=>slots.push({num:null,item:it}));
+  return slots;
+}
+
+/* ---- 渲染 ---- */
+const yearList=document.getElementById('yearList');
+const years=Object.keys(LIBRARY).map(Number).sort((a,b)=>a-b); /* 旧到新 */
+
+function cardHTML(year,slot){
+  if(!slot.item){
+    return `<div class="card missing">
+      <div class="cardTop"><span class="dot"></span><span class="name">Text ${slot.num}</span></div>
+      <div class="btnRow"><span class="todo">暂未更新</span><span class="todo">暂未更新</span></div>
+    </div>`;
+  }
+  const it=slot.item;
+  const faved=favs.includes(it.id), done=doneList.includes(it.id);
+  const label=slot.num?`Text ${slot.num}`:it.label;
+  return `<div class="card have${faved?' faved':''}" data-id="${it.id}" data-year="${year}" data-label="${label}">
+    <div class="cardTop">
+      <span class="dot"></span><span class="name">${label}</span>
+      <button class="donePill${done?' on':''}" title="标记学完">${done?'✓ 学完':'学完'}</button>
+      <button class="starBtn${faved?' on':''}" title="收藏">★</button>
+    </div>
+    <div class="btnRow">
+      ${it.zuoti?`<a class="btn zuoti" href="${it.zuoti}" data-mode="做题模式">做题模式</a>`:'<span class="todo">暂未更新</span>'}
+      ${it.fupan?`<a class="btn fupan" href="${it.fupan}" data-mode="复盘模式">复盘模式</a>`:'<span class="todo">暂未更新</span>'}
+      <a class="btn noteBtn" href="${it.note}" data-mode="手写笔记" title="手写笔记">✍️</a>
+    </div>
+  </div>`;
+}
+
+function render(filter=''){
+  const q=filter.trim().toLowerCase();
+  let html='', hasResult=false;
+  for(const y of years){
+    const slots=slotsOf(y);
+    const have=slots.filter(s=>s.item);
+    const matched=q?slots.filter(s=>s.item&&(String(y).includes(q)||(s.item.label||'').toLowerCase().includes(q)||s.item.id.toLowerCase().includes(q))):slots;
+    if(q&&!matched.length)continue;
+    hasResult=hasResult||matched.some(s=>s.item);
+    if(!have.length){ /* 空年份：一行带过 */
+      html+=`<div class="yearRow"><b>${y} 年</b><span class="pill">Text 1 – 4 暂未更新</span></div>`;
+      continue;
+    }
+    html+=`<div class="yearSec" data-year="${y}">
+      <div class="yearHead"><h2>${y} 年</h2><span class="cnt"><b>${have.length}</b> / 4 篇已收录</span></div>
+      <div class="yearBody"><div class="grid">${matched.map(s=>cardHTML(y,s)).join('')}</div></div>
+    </div>`;
+  }
+  yearList.innerHTML=html;
+  document.getElementById('emptyTip').classList.toggle('show',q&&!hasResult);
+  document.getElementById('recentSec').style.display=(q||!recent.length)?'none':'';
+  bindCards();
+}
+
+/* ---- 卡片交互 ---- */
+function pushRecent(id,year,label,href){
+  recent=recent.filter(r=>r.id!==id);
+  recent.unshift({id,year:String(year),label,href,ts:Date.now()});
+  recent=recent.slice(0,12);
+  save(LS_RECENT,recent);
+}
+function bindCards(){
+  document.querySelectorAll('.card.have').forEach(card=>{
+    const id=card.dataset.id, year=card.dataset.year, label=card.dataset.label;
+    card.querySelectorAll('.btnRow .btn').forEach(a=>{
+      a.addEventListener('click',()=>pushRecent(id,year,label,a.getAttribute('href')));
+    });
+    card.querySelector('.starBtn').addEventListener('click',e=>{
+      e.preventDefault();
+      favs=favs.includes(id)?favs.filter(x=>x!==id):[...favs,id];
+      save(LS_FAV,favs);
+      e.currentTarget.classList.toggle('on');
+      card.classList.toggle('faved');
+    });
+    const pill=card.querySelector('.donePill');
+    pill.addEventListener('click',e=>{
+      e.preventDefault();
+      doneList=doneList.includes(id)?doneList.filter(x=>x!==id):[...doneList,id];
+      save(LS_DONE,doneList);
+      const on=doneList.includes(id);
+      pill.classList.toggle('on',on);
+      pill.textContent=on?'✓ 学完':'学完';
+    });
+  });
+}
+
+/* ---- 最近学习 ---- */
+function renderRecent(){
+  const sec=document.getElementById('recentSec'), row=document.getElementById('recentRow');
+  if(!recent.length){sec.style.display='none';return;}
+  sec.style.display='';
+  row.innerHTML=recent.slice(0,8).map(r=>{
+    const d=new Date(r.ts);
+    return `<div class="recentCard" data-href="${r.href}">
+      <span class="rcName">${r.year} 年 ${r.label}</span>
+      <span class="rcDate">${d.getMonth()+1}月${d.getDate()}日</span>
+    </div>`;
+  }).join('');
+  row.querySelectorAll('.recentCard').forEach(c=>{
+    c.addEventListener('click',()=>location.href=c.dataset.href);
+  });
+}
+
+/* ---- 搜索 ---- */
+const search=document.getElementById('search'), clearBtn=document.getElementById('clearBtn');
+let searchTimer=null;
+search.addEventListener('input',()=>{
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>render(search.value),120);
+  clearBtn.classList.toggle('show',!!search.value);
+});
+clearBtn.addEventListener('click',()=>{search.value='';clearBtn.classList.remove('show');render();});
+
+renderRecent();
+render();
+
+/* ---- 笔记备份：导出全部 / 导入 ---- */
+function openNotesDB(){
+  if(window.ekzDB)return window.ekzDB.open();
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('ekz-notes-v2',2);
+    r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('notes'))db.createObjectStore('notes',{keyPath:'id'});};
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+function getAllNotes(){
+  return openNotesDB().then(db=>new Promise((res,rej)=>{
+    const rq=db.transaction('notes','readonly').objectStore('notes').getAll();
+    rq.onsuccess=()=>res(rq.result||[]);
+    rq.onerror=()=>rej(rq.error);
+  }));
+}
+function putNotes(recs){
+  return openNotesDB().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction('notes','readwrite');
+    const st=tx.objectStore('notes');
+    recs.forEach(r=>st.put(r));
+    tx.oncomplete=()=>res(true);
+    tx.onerror=()=>rej(tx.error);
+  }));
+}
+function toastMsg(t){
+  const el=document.getElementById('toast');
+  el.textContent=t;el.style.opacity=1;
+  clearTimeout(toastMsg._t);
+  toastMsg._t=setTimeout(()=>el.style.opacity=0,1800);
+}
+/* ---- 笔记备份：导出（弹窗：JSON 备份 / PDF 做题页带批注） ---- */
+function exportJsonAll(){
+  return getAllNotes().then(notes=>{
+    if(!notes.length){toastMsg('还没有笔记哦，先去写点东西');return;}
+    const data={app:'ekz-notes-backup',v:1,ts:Date.now(),notes:notes};
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    const d=new Date(),pad=n=>String(n).padStart(2,'0');
+    a.download='英语真题手写笔记备份_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+    toastMsg('已导出 '+notes.length+' 条笔记记录（含批注）');
+  }).catch(err=>{console.error(err);toastMsg('导出失败');});
+}
+/* 把一张底稿图 + 该页笔迹合成 canvas（图片走 dataURL，file:// 下不会被污染） */
+function renderPageCanvas(imgSrc,strokes){
+  return new Promise(res=>{
+    const finish=img=>{
+      const W=img?img.naturalWidth:1240,H=img?img.naturalHeight:Math.round(1240*1.414);
+      const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+      const c=cv.getContext('2d');
+      c.fillStyle='#fff';c.fillRect(0,0,W,H);
+      if(img)c.drawImage(img,0,0,W,H);
+      const st=strokes||[];
+      /* 笔迹粗细补偿：做题页屏幕上画布约 630 CSS px 宽，导出画布是图片原始
+         分辨率（更宽），size 不放大会细成发丝——按宽度比例补偿 */
+      const k=W/630;
+      const draw=s=>{
+        const P0=s.pts;if(!P0||!P0.length)return;
+        const P=P0.map(q=>({x:q.x*W,y:q.y*H,p:(q.p===undefined?.5:q.p)}));
+        c.save();c.lineCap='round';c.lineJoin='round';
+        if(s.tool==='er'){c.globalCompositeOperation='destination-out';c.strokeStyle=c.fillStyle='#000';c.globalAlpha=1;}
+        else if(s.tool==='hl'){c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=.32;}
+        else{c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=1;}
+        if(P.length===1){c.beginPath();c.arc(P[0].x,P[0].y,s.size*k/2,0,7);c.fill();c.restore();return;}
+        if(s.tool==='pen'){
+          let px=P[0].x,py=P[0].y,pp=P[0].p;
+          for(let i=1;i<P.length-1;i++){
+            const a=P[i],b=P[i+1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2,mp=(a.p+b.p)/2;
+            c.lineWidth=s.size*k*(.65+.7*((pp+mp)/2));
+            c.beginPath();c.moveTo(px,py);c.quadraticCurveTo(a.x,a.y,mx,my);c.stroke();
+            px=mx;py=my;pp=mp;
+          }
+          const last=P[P.length-1];
+          c.lineWidth=s.size*k*(.65+.7*((pp+last.p)/2));
+          c.beginPath();c.moveTo(px,py);c.lineTo(last.x,last.y);c.stroke();
+        }else{
+          c.lineWidth=s.size*k;c.beginPath();c.moveTo(P[0].x,P[0].y);
+          for(let i=1;i<P.length-1;i++){c.quadraticCurveTo(P[i].x,P[i].y,(P[i].x+P[i+1].x)/2,(P[i].y+P[i+1].y)/2);}
+          c.lineTo(P[P.length-1].x,P[P.length-1].y);c.stroke();
+        }
+        c.restore();
+      };
+      for(const s of st)if(s.tool==='hl')draw(s);
+      for(const s of st)if(s.tool==='pen')draw(s);
+      for(const s of st)if(s.tool==='er')draw(s);
+      res(cv);
+    };
+    if(!imgSrc){finish(null);return;}
+    const im=new Image();
+    im.onload=()=>finish(im);
+    im.onerror=()=>finish(null);
+    im.src=imgSrc;
+  });
+}
+function loadImgData(paperId){
+  if(window.EKZ_IMGDATA&&EKZ_IMGDATA[paperId])return Promise.resolve(EKZ_IMGDATA[paperId]);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='assets/pdfimg/'+paperId+'.js';
+    s.onload=()=>res(window.EKZ_IMGDATA&&EKZ_IMGDATA[paperId]);
+    s.onerror=()=>rej(new Error('图片数据包缺失'));
+    document.head.appendChild(s);
+  });
+}
+async function exportPdfPapers(yearVal,paperVal){
+  try{
+    let papers=[];
+    if(yearVal==='all'){Object.keys(LIBRARY).forEach(y=>papers=papers.concat(LIBRARY[y]||[]));}
+    else{
+      papers=(LIBRARY[yearVal]||[]).slice();
+      if(paperVal!=='all')papers=papers.filter(it=>it.id===paperVal);
+    }
+    if(!papers.length){toastMsg('这个范围还没有篇目哦');return;}
+    toastMsg('正在合成 PDF…');
+    const notes=await getAllNotes();
+    let markCount=0;for(const it2 of papers){const r2=notes.find(r=>r.id===it2.id+'-mark');if(r2&&r2.marks)for(const k in r2.marks)markCount+=(r2.marks[k]||[]).length;}
+    const canvases=[];
+    for(const it of papers){
+      let imgs=null;
+      try{imgs=await loadImgData(it.id);}catch(_){}
+      const rec=notes.find(r=>r.id===it.id+'-mark');
+      const slots=['article','question'];
+      for(let i=0;i<2;i++){
+        const src=(imgs&&imgs[i])||(it.underlay&&it.underlay[i])||'';
+        /* 有图片数据就用图；没有图就用纯白 A4 + 笔迹兜底 */
+        const cv=await renderPageCanvas(src.indexOf('data:')===0?src:'',rec&&rec.marks&&rec.marks[slots[i]]);
+        canvases.push(cv);
+      }
+    }
+    if(!canvases.length){toastMsg('没有可导出的内容');return;}
+    const blob=await EkzPdf.build(canvases);
+    const d=new Date(),pad=n=>String(n).padStart(2,'0');
+    EkzPdf.download(blob,'英语真题做题页_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.pdf');
+    toastMsg('已导出 PDF，共 '+canvases.length+' 页'+(markCount?('，含 '+markCount+' 条批注'):'（注意：没有找到任何批注哦）'));
+  }catch(err){console.error(err);toastMsg('PDF 导出失败');}
+}
+document.getElementById('bkExportBtn').addEventListener('click',()=>{
+  /* 年份/篇目选择（只影响 PDF；JSON 永远导全部） */
+  const wrap=document.createElement('div');
+  const ySel=document.createElement('select');
+  const pSel=document.createElement('select');
+  wrap.appendChild(ySel);wrap.appendChild(pSel);
+  const optY1=document.createElement('option');optY1.value='all';optY1.textContent='全部年份';ySel.appendChild(optY1);
+  Object.keys(LIBRARY).map(Number).sort((a,b)=>a-b).forEach(y=>{
+    if((LIBRARY[y]||[]).length){const o=document.createElement('option');o.value=y;o.textContent=y+' 年';ySel.appendChild(o);}
+  });
+  function fillPapers(){
+    pSel.innerHTML='';
+    const y=ySel.value;
+    const list=y==='all'?[]:(LIBRARY[y]||[]);
+    const o=document.createElement('option');
+    o.value='all';o.textContent=y==='all'?'全部篇目':'全部篇目（'+list.length+' 篇）';
+    pSel.appendChild(o);
+    list.forEach(it=>{const op=document.createElement('option');op.value=it.id;op.textContent=it.label;pSel.appendChild(op);});
+    pSel.disabled=(y==='all');
+  }
+  fillPapers();
+  ySel.addEventListener('change',fillPapers);
+  EkzExport.menu({
+    title:'导出',
+    sub:'JSON 是全量备份；PDF 按下面的范围导出做题页（文章＋题目，含手写批注）',
+    extra:wrap,
+    items:[
+      {label:'备份 JSON',sub:'全部批注和笔记打包成一个文件（恢复用）',onClick:()=>exportJsonAll()},
+      {label:'导出 PDF',sub:'做题页文章＋题目，带手写批注',onClick:()=>exportPdfPapers(ySel.value,pSel.value)}
+    ]
+  });
+});
+const bkFile=document.createElement('input');
+bkFile.type='file';bkFile.accept='.json,application/json';bkFile.style.display='none';
+document.body.appendChild(bkFile);
+document.getElementById('bkImportBtn').addEventListener('click',()=>bkFile.click());
+bkFile.addEventListener('change',e=>{
+  const f=e.target.files[0];e.target.value='';
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      let recs=[];
+      if(data.app==='ekz-notes-backup'&&Array.isArray(data.notes)){
+        recs=data.notes.filter(r=>r&&r.id&&(Array.isArray(r.pages)||(r.marks&&typeof r.marks==='object')));
+      }else if(data.app==='ekz-notes'&&data.id&&Array.isArray(data.pages)){
+        recs=[data]; /* 兼容旧版单本备份 */
+      }
+      if(!recs.length)throw new Error('格式不对');
+      await putNotes(recs);
+      toastMsg('导入成功，共 '+recs.length+' 条记录');
+    }catch(err){toastMsg('文件不对，要用本库导出的JSON');}
+  };
+  reader.readAsText(f);
+});
+</script>
+</body>
+</html>

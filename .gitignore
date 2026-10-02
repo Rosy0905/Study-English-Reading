@@ -1,0 +1,6 @@
+# 备份目录不上库
+.backups/
+# 系统垃圾
+Thumbs.db
+Desktop.ini
+.DS_Store

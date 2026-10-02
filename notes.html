@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>手写笔记</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{
+  --sat:env(safe-area-inset-top,0px);
+  --sab:env(safe-area-inset-bottom,0px);
+  --pri:#f8bbd0;
+  --pri-rgb:248,187,208;
+  --pri-ink:#c2185b;
+  --pri-hover:#fce4ec;
+  --accent:#8b6fc4;
+  --accent-deep:#6a4fa3;
+  --line:#e0d6f0;
+  --text:#2e2640;
+  --text-sub:#7a6f8f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#f7f4fb;font-family:'PingFang SC','Microsoft YaHei',sans-serif;color:var(--text);
+  overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+
+/* ===== 顶栏 ===== */
+#top{position:fixed;left:0;right:0;top:0;z-index:40;min-height:50px;
+  display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:8px 14px;
+  background:rgba(255,255,255,.97);border-bottom:1px solid var(--line);
+  backdrop-filter:blur(8px)}
+.tbtn{border:1px solid var(--line);background:#fff;color:var(--text-sub);
+  border-radius:9px;padding:7px 12px;font-size:13px;cursor:pointer;flex:0 0 auto;font-family:inherit}
+.tbtn:hover{color:var(--accent-deep);border-color:var(--accent)}
+#back{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;color:var(--text-sub);
+  border-radius:9px;padding:7px 12px;font-size:13px;cursor:pointer;text-decoration:none;flex:0 0 auto;font-family:inherit}
+#back:hover{color:var(--accent-deep);border-color:var(--accent)}
+#back .bkArrow{font-size:13px}
+#underlayRow{position:absolute;inset:0;width:100%;height:100%;display:flex;pointer-events:none;}
+#underlayRow img{width:50%;height:100%;display:block;user-select:none;-webkit-user-drag:none}
+#underlayRow.hiddenU{visibility:hidden}
+#title{font-size:14px;font-weight:600;color:var(--accent-deep);flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbtn{border:1px solid var(--line);background:#fff;color:var(--text-sub);
+  border-radius:9px;padding:7px 12px;font-size:13px;cursor:pointer;flex:0 0 auto;font-family:inherit}
+.tbtn:hover{color:var(--accent-deep);border-color:var(--accent)}
+.tbtn:disabled{opacity:.35;cursor:not-allowed}
+/* 顶栏按钮统一成做题页那款（紫边紫字，hover 浅紫底） */
+.tbtn{border:1.5px solid #b9a1e6;color:#5a3f96;font-family:inherit}
+.tbtn:hover{background:#efe9f9;color:#5a3f96;border-color:#b9a1e6}
+#back{border:1.5px solid #b9a1e6;color:#5a3f96}
+#back:hover{background:#efe9f9;color:#5a3f96;border-color:#b9a1e6}
+
+/* ===== 纸张 ===== */
+#desk{position:fixed;left:0;right:0;top:50px;bottom:0;overflow:auto;
+  -webkit-overflow-scrolling:touch;padding:18px 14px 40px}
+#paperWrap{position:relative;margin:0 auto;background:#fff;
+  border-radius:6px;box-shadow:0 4px 24px rgba(46,38,64,.12);
+  /* 宽度=可用高度×底稿比例，撑满视口；窄屏则取 100% */
+  --ar:.707;aspect-ratio:var(--ar);
+  width:min(100%,calc((100vh - 128px)*var(--ar)));
+  opacity:0;transition:opacity .12s}
+#paperWrap.ready{opacity:1}
+@media(max-width:760px){#paperWrap{border-radius:0;box-shadow:none}}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <a id="back" href="index.html" title="返回主页"><span class="bkArrow">⬅</span><span>主页</span></a>
+  <div id="title">手写笔记</div>
+  <button class="tbtn" id="uToggle" title="显示/隐藏真题底稿" style="display:none">底稿</button>
+  <button class="tbtn" id="exportBtn" title="导出批注（图片 / PDF）">导出</button>
+</div>
+
+<div id="desk">
+  <div id="paperWrap">
+    <div id="underlayRow">
+      <img id="underlayA" alt="" draggable="false">
+      <img id="underlayQ" alt="" draggable="false">
+    </div>
+  </div>
+</div>
+
+<script src="manifest.js"></script>
+<script src="assets/ekz-db.js"></script>
+<script src="assets/ink-toolbar.js"></script>
+<script src="assets/ekz-export.js"></script>
+<script src="assets/ekz-pdf.js"></script>
+<script src="assets/ink-paper.js"></script>
+<script>
+/* ============================================================
+   手写笔记页（单张纸 · 与真题页批注共用同一套引擎和工具栏）
+   ============================================================ */
+const params=new URLSearchParams(location.search);
+const NOTE_ID=params.get('id')||('free-'+Date.now());
+
+let item=null;
+(function findItem(){
+  for(const y of Object.keys(LIBRARY)){
+    const hit=(LIBRARY[y]||[]).find(it=>it.id===NOTE_ID);
+    if(hit){item={...hit,year:y};return;}
+  }
+})();
+const NOTE_TITLE=item?item.year+' · '+item.label:'自由笔记';
+document.getElementById('title').textContent=NOTE_TITLE+' · 手写笔记';
+document.title=NOTE_TITLE+' · 手写笔记';
+const EXPORT_NAME=(item?item.id.replace(/[^0-9a-z-]/gi,''):'note')+'-手写笔记.png';
+
+/* ---- 存取 ---- */
+function openDB(){
+  if(window.ekzDB)return window.ekzDB.open();
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('ekz-notes-v2',1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('notes'))db.createObjectStore('notes',{keyPath:'id'});};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function dbGet(id){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const rq=db.transaction('notes','readonly').objectStore('notes').get(id);
+    rq.onsuccess=()=>resolve(rq.result||null);
+    rq.onerror=()=>reject(rq.error);
+  });
+}
+async function dbPut(rec){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('notes','readwrite');
+    tx.objectStore('notes').put(rec);
+    tx.oncomplete=()=>resolve(1);
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+
+let strokes=[]; /* 持久数组：引擎直接往里 push，保存时整体快照 */
+let dirty=false,saveTimer=null;
+function markDirty(){
+  dirty=true;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(doSave,700);
+}
+async function doSave(){
+  if(!dirty)return;
+  try{
+    await dbPut({id:NOTE_ID,strokes:strokes,migratedV4:'1',ts:Date.now()});
+    dirty=false;
+  }catch(err){console.error('保存失败',err);}
+}
+window.addEventListener('beforeunload',()=>{if(dirty)doSave();});
+
+/* ---- 启动：加载笔迹 → 工具栏 + 纸张 ---- */
+(async function init(){
+  try{
+    if(!window.ekzDB)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='assets/ekz-db.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    await window.ekzDB.migrate();
+  }catch(_){}
+
+  try{
+    const rec=await dbGet(NOTE_ID);
+    if(rec){
+      if(rec.migratedV4==='1'&&Array.isArray(rec.strokes)){
+        strokes=rec.strokes;
+      }else if(Array.isArray(rec.pages)){
+        /* 旧版迁移：多页合并成一张纸。
+           v3 宽纸（左文右题）的笔迹横向压缩一半，更早的单页笔迹原样搬 */
+        const wide=rec.migratedV3==='1';
+        strokes=rec.pages.reduce((acc,page)=>acc.concat(page||[]),[]).map(s=>({
+          ...s,pts:(s.pts||[]).map(q=>{
+            const a=Array.isArray(q)?{x:q[0],y:q[1],p:.5}:{x:q.x,y:q.y,p:(q.p===undefined?.5:q.p)};
+            return {...a,x:wide?a.x*.5:a.x};
+          })
+        }));
+      }else if(Array.isArray(rec.strokes)){
+        strokes=rec.strokes;
+      }
+    }
+  }catch(err){console.error('读取笔记失败',err);}
+
+  /* 工具栏（她的那套，和真题页共用 ink-toolbar.js） */
+  const undoStack=[],redoStack=[];
+  const bar=window.EkzInkBar.create({
+    onChange:function(kind){
+      if(!paper)return;
+      if(kind==='eye')paper.redraw();
+      else if(kind==='undo')undo();
+      else if(kind==='redo')redo();
+      else if(kind==='clear'){
+        if(strokes.length){undoStack.push({t:'clear',s:strokes.splice(0)});redoStack.length=0;paper.redraw();markDirty();}
+      }
+      else if(kind==='export')doExport();
+    }
+  });
+
+  /* 撤销/重做 */
+  function undo(){
+    const op=undoStack.pop();if(!op)return;
+    if(op.t==='add'){const i=strokes.indexOf(op.s);if(i>=0)strokes.splice(i,1);redoStack.push({t:'add',s:op.s});}
+    else if(op.t==='clear'){redoStack.push({t:'clear',s:strokes.splice(0)});}
+    paper.redraw();markDirty();
+  }
+  function redo(){
+    const op=redoStack.pop();if(!op)return;
+    if(op.t==='add')strokes.push(op.s);
+    else if(op.t==='clear')strokes.push.apply(strokes,op.s);
+    paper.redraw();markDirty();
+  }
+
+  /* 底稿：左边文章页、右边题目页，可一键显隐 */
+  const UNDERLAYS=(item&&Array.isArray(item.underlay))?item.underlay:[];
+  /* 去污染：底稿换成数据包里的 dataURL（file:// 直开时 canvas 才不会被"污染"，
+     带底稿的导出图片/PDF 才能成功）。数据包由 scripts/make-imgdata.py 生成。 */
+  if(UNDERLAYS.length){
+    const ds=document.createElement('script');
+    ds.src='assets/pdfimg/'+NOTE_ID+'.js';
+    ds.onload=function(){
+      const data=window.EKZ_IMGDATA&&window.EKZ_IMGDATA[NOTE_ID];
+      if(!data)return;
+      if(data[0])underlayA.src=data[0];
+      if(data[1])underlayQ.src=data[1];
+    };
+    document.head.appendChild(ds);
+  }
+  const underlayA=document.getElementById('underlayA'),underlayQ=document.getElementById('underlayQ');
+  const underlayRow=document.getElementById('underlayRow'),uTog=document.getElementById('uToggle');
+  let uVisible=true;
+  if(UNDERLAYS.length){
+    uTog.style.display='';
+    if(UNDERLAYS[0])underlayA.src=UNDERLAYS[0];
+    if(UNDERLAYS[1])underlayQ.src=UNDERLAYS[1];
+    const revealPaper=()=>{document.getElementById('paperWrap').classList.add('ready');if(paper)paper.redraw();};
+    underlayA.addEventListener('load',function(){
+      const ar=(underlayA.naturalWidth*2/underlayA.naturalHeight).toFixed(4);
+      document.getElementById('paperWrap').style.setProperty('--ar',ar);
+      revealPaper();
+    });
+    /* 图片加载失败也别把纸藏没了 */
+    underlayA.addEventListener('error',revealPaper);
+    setTimeout(revealPaper,2000);
+    uTog.addEventListener('click',function(){
+      uVisible=!uVisible;
+      underlayRow.classList.toggle('hiddenU',!uVisible);
+      uTog.classList.toggle('on',!uVisible);
+      if(paper)paper.redraw();
+    });
+  }else{
+    document.getElementById('paperWrap').classList.add('ready');
+  }
+
+  /* 纸张（共用引擎） */
+  window.paper=window.EkzInkPaper.create({
+    host:document.getElementById('paperWrap'),
+    strokes:strokes,
+    state:bar.st,
+    toast:bar.toast,
+    onDirty:function(){
+      undoStack.push({t:'add',s:strokes[strokes.length-1]});
+      redoStack.length=0;
+      markDirty();
+    }
+  });
+  paper.setEditing(true);
+
+  /* 导出（顶栏）：弹窗选图片 / PDF */
+  document.getElementById('exportBtn').addEventListener('click',async()=>{
+    try{
+      if(dirty)await doSave();
+      EkzExport.menu({
+        title:'导出手写笔记',
+        sub:'当前笔记页，含笔迹和底稿',
+        items:[
+          {label:'导出为图片',sub:'PNG · 单张笔记图',onClick:exportNoteImage},
+          {label:'导出为 PDF',sub:'单页 PDF 文件',onClick:exportNotePdf}
+        ]
+      });
+    }catch(err){console.error(err);bar.toast('打开导出失败');}
+  });
+  function exportNoteImage(){
+    const out=paper.exportCanvas();
+    if(!out){return;}
+    out.toBlob(blob=>{
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=EXPORT_NAME;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+      bar.toast('已导出');
+    },'image/png');
+  }
+  function exportNotePdf(){
+    const out=paper.exportCanvas();
+    if(!out){return;}
+    EkzPdf.build([out]).then(blob=>{
+      EkzPdf.download(blob,EXPORT_NAME.replace(/\.png$/i,'')+'.pdf');
+      bar.toast('已导出');
+    });
+  }
+})();
+</script>
+</body>
+</html>
