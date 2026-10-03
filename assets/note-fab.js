@@ -98,8 +98,9 @@
             title: '\u5BFC\u51FA\u6279\u6CE8',
             sub: PAPER + ' \u00B7 \u6587\u7AE0\u9875\u548C\u9898\u76EE\u9875\u7684\u624B\u5199\u6279\u6CE8',
             items: [
-              { label: '\u5BFC\u51FA\u4E3A\u56FE\u7247', sub: 'PNG \u00B7 \u6587\u7AE0\u9875\u548C\u9898\u76EE\u9875\u5404\u4E00\u5F20', onClick: function () { doExport(); } },
-              { label: '\u5BFC\u51FA\u4E3A PDF', sub: '\u4E24\u9875\u6279\u6CE8\u5408\u6210\u4E00\u4E2A PDF \u6587\u4EF6', onClick: function () { doPdfExport(); } }
+              { label: '\u5206\u522B\u5BFC\u51FA\u4E3A\u56FE\u7247', sub: 'PNG \u00B7 \u6587\u7AE0\u9875\u548C\u9898\u76EE\u9875\u5404\u4E00\u5F20', onClick: function () { doExportSplit(); } },
+              { label: '\u5408\u5E76\u5BFC\u51FA\u4E3A\u957F\u56FE', sub: 'PNG \u00B7 \u4E24\u9875\u4E0A\u4E0B\u62FC\u6210\u4E00\u5F20\uFF0C\u53EA\u5F39\u4E00\u6B21\u4E0B\u8F7D\uFF08\u5E73\u677F\u63A8\u8350\uFF09', onClick: function () { doExport(); } },
+              { label: '\u5408\u5E76\u5BFC\u51FA\u4E3A PDF', sub: '\u4E24\u9875\u6279\u6CE8\u5408\u6210\u4E00\u4E2A PDF \u6587\u4EF6', onClick: function () { doPdfExport(); } }
             ]
           });
         });
@@ -178,22 +179,57 @@
     engine.setInkHidden(inkBar.st.hidden);
   }
 
+  /* 把多张画布纵向拼成一张，导出只弹一次下载窗口（平板浏览器会拦第二次） */
+  function mergeCanvases(list) {
+    var arr = list.filter(Boolean);
+    if (!arr.length) return null;
+    if (arr.length === 1) return arr[0];
+    var pad = 12, w = 0, h = pad;
+    arr.forEach(function (c) { w = Math.max(w, c.width); h += c.height + pad; });
+    var out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    var g = out.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+    var y = pad;
+    arr.forEach(function (c) { g.drawImage(c, 0, y); y += c.height + pad; });
+    return out;
+  }
+
   function doExport() {
     if (!engine) return;
+    var list = [];
     if (IS_DO) {
       var a = engine.exportSlot('article');
       var q = engine.exportSlot('question');
-      var n = stamp();
-      if (a) downloadCanvas(a, PAPER + '-\u6587\u7AE0\u9875\u6279\u6CE8-' + n + '.png');
-      if (q) setTimeout(function () { downloadCanvas(q, PAPER + '-\u9898\u76EE\u9875\u6279\u6CE8-' + n + '.png'); }, 400);
+      if (a) list.push(a); if (q) list.push(q);
     } else {
-      /* exportSlot 按 key（rv-left/rv-right）查，传 slot 名会 fallback 到随便一张纸
-         ——这就是之前"只有笔记没有原图"的原因 */
-      var n2 = stamp(), exported = 0;
-      if (rvLeftSlot) { var c1 = engine.exportSlot('rv-left'); if (c1) { downloadCanvas(c1, PAPER + '-\u5DE6\u56FE\u6279\u6CE8-' + n2 + '.png'); exported++; } }
-      if (rvRightSlot) { var c2 = engine.exportSlot('rv-right'); if (c2) { setTimeout(function () { downloadCanvas(c2, PAPER + '-\u89E3\u6790\u6279\u6CE8-' + n2 + '.png'); }, 400); exported++; } }
-      if (!exported) { var c0 = engine.exportSlot(); if (c0) downloadCanvas(c0, PAPER + '-\u6279\u6CE8-' + n2 + '.png'); }
+      if (rvLeftSlot) { var c1 = engine.exportSlot('rv-left'); if (c1) list.push(c1); }
+      if (rvRightSlot) { var c2 = engine.exportSlot('rv-right'); if (c2) list.push(c2); }
     }
+    if (!list.length) { var c0 = engine.exportSlot(); if (c0) list.push(c0); }
+    var merged = mergeCanvases(list);
+    if (!merged) return;
+    downloadCanvas(merged, PAPER + '-\u6279\u6CE8-' + stamp() + '.png');
+  }
+
+  /* 旧行为：每页各下一张。电脑端想要分开文件时用，手机浏览器会拦第二次 */
+  function doExportSplit() {
+    if (!engine) return;
+    var n = stamp(), got = [];
+    if (IS_DO) {
+      var a = engine.exportSlot('article');
+      var q = engine.exportSlot('question');
+      if (a) got.push([a, 'article']);
+      if (q) got.push([q, 'question']);
+    } else {
+      if (rvLeftSlot) { var c1 = engine.exportSlot('rv-left'); if (c1) got.push([c1, 'left']); }
+      if (rvRightSlot) { var c2 = engine.exportSlot('rv-right'); if (c2) got.push([c2, 'right']); }
+    }
+    if (!got.length) { var c0 = engine.exportSlot(); if (c0) got.push([c0, 'ink']); }
+    got.forEach(function (pair, i) {
+      var fn = function () { downloadCanvas(pair[0], PAPER + '-' + pair[1] + '-' + n + '.png'); };
+      if (i === 0) fn(); else setTimeout(fn, 500);
+    });
   }
 
   /* 复盘：左右两张纸 —— 左栏真题图（跟图走，同图同笔迹、换图换新笔记）
@@ -226,20 +262,31 @@
     var leftStage = document.getElementById('leftStage');
     var leftPanel = document.getElementById('leftPanel');
     var rvGz = null;
+
+    /* 真正干活的挂载逻辑。原来整段塞在观察器回调里，
+       而复盘页自己那份脚本是同步 render() 的 —— 引擎 init() 是 await 异步的，
+       等观察器注册上，focusPage 早就渲染完了，DOM 一个字节都不再变，
+       观察器永远不触发 → 左栏画布从没挂上 → 她反馈的
+       "返回主页再进来笔记消失、左图不可编辑"。所以这里独立成函数，
+       注册完立刻主动调一次，之后观察器只负责后续步骤的重建。 */
+    function syncRvLeft() {
+      if (!engine) return false;
+      var fp = document.getElementById('focusPage');
+      var lp = document.getElementById('leftPanel');
+      if (!fp || !fp.querySelector('img') || !lp) return false;
+      if (lp.hidden) lp.hidden = false;
+      var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
+      var slot = 'rv-left-' + asset;
+      if (!rvGz) rvGz = rvGestures();
+      engine.mountPaper('rv-left', slot, fp, false, rvGz);
+      if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
+      rvLeftSlot = slot;
+      return true;
+    }
+
     var obs = new MutationObserver(function () {
       requestAnimationFrame(function () {
-        if (!engine) return;
-        var fp = document.getElementById('focusPage');
-        var lp = document.getElementById('leftPanel');
-        if (fp && fp.querySelector('img') && lp) {
-          if (lp.hidden) lp.hidden = false;
-          var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
-          var slot = 'rv-left-' + asset;
-          if (!rvGz) rvGz = rvGestures();
-          engine.mountPaper('rv-left', slot, fp, false, rvGz);
-          if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
-          rvLeftSlot = slot;
-        }
+        syncRvLeft();
         placeRvSplit();
       });
     });
@@ -247,23 +294,50 @@
     if (leftPanel) obs.observe(leftPanel, { attributes: true, attributeFilter: ['hidden'] });
     rvObs = obs;
 
+    /* 主动补挂：注册观察器时立刻试一次；图片是懒加载的，
+       img 元素先在、decode 后才可能有尺寸，所以再按节奏重试几轮。 */
+    syncRvLeft();
+    var tries = 0;
+    var retry = setInterval(function () {
+      tries++;
+      if (syncRvLeft() && tries >= 3) clearInterval(retry);
+      if (tries > 40) clearInterval(retry);
+    }, 250);
+
     /* 步骤切换：右栏解析换对应步骤的笔迹层 */
     var progress = document.getElementById('progress');
+    function syncRvStep() {
+      if (!engine || !progress) return;
+      var m = progress.textContent.match(/(\d+)\s*\//);
+      if (!m) return;
+      var n = parseInt(m[1], 10);
+      if (n === rvStepIdx) return;
+      rvStepIdx = n;
+      engine.setSlot('rv-right', 'rv-right-step-' + n);
+      rvRightSlot = 'rv-right-step-' + n;
+    }
     if (progress) {
       var stepObs = new MutationObserver(function () {
-        requestAnimationFrame(function () {
-          if (!engine) return;
-          var m = progress.textContent.match(/(\d+)\s*\//);
-          if (m) {
-            rvStepIdx = parseInt(m[1], 10);
-            engine.setSlot('rv-right', 'rv-right-step-' + rvStepIdx);
-            rvRightSlot = 'rv-right-step-' + rvStepIdx;
-          }
-        });
+        requestAnimationFrame(syncRvStep);
       });
       stepObs.observe(progress, { childList: true, characterData: true, subtree: true });
       rvObs = [obs, stepObs];
+      /* 返回主页再进来时进度是恢复过的（比如停在第 2 步），
+         观察器只认"变化"，不主动读一次就会停在 step-1 那个空层上。 */
+      syncRvStep();
     }
+  }
+
+  /* 复盘页右栏在各版本模板里写法不同，逐级兜底。
+     （原来这个函数被放在做题页的 if 块里，复盘页根本访问不到 ——
+      她 2026-10-03 反馈"第 2 页没有分隔线、翻到别的页又冒出来"就是这个原因。） */
+  function rightPanelEl() {
+    var lay = document.getElementById('layout') || document.querySelector('.layout');
+    return document.querySelector('.rightPanel') ||
+      document.getElementById('rightScroll') ||
+      document.getElementById('rightContent') ||
+      (lay ? lay.querySelector('.panel:last-child') : null) ||
+      (lay && lay.children.length > 1 ? lay.children[lay.children.length - 1] : null);
   }
 
   /* 复盘分隔条：左栏显示时出现，拖动调左右比例 */
@@ -272,7 +346,10 @@
   function setupRvSplit() {
     var layoutEl = document.querySelector('#layout, .layout');
     var lp = document.getElementById('leftPanel');
-    var rp = document.querySelector('.rightPanel');
+    /* 各版本复盘页右栏写法不一：有的 .rightPanel，有的只有 #rightScroll / .layout .panel:last-child。
+       原来只查 .rightPanel，2014-text1 这类页面直接 return，分隔条功能整个不生效 ——
+       她反馈"第 2 页没有分隔线、翻到别的页又冒出来"就是这个原因。 */
+    var rp = rightPanelEl();
     if (!layoutEl || !lp || !rp) return;
     layoutEl.style.position = 'relative';
     if (!rvSplit) {
@@ -335,10 +412,37 @@
           'minmax(300px,' + Math.round(saved * 100) + 'fr) minmax(320px,' + Math.round((1 - saved) * 100) + 'fr)';
       }
       rvSplit.style.display = lp.hidden ? 'none' : '';
-      rvSplit.style.left = rp.offsetLeft + 'px';
+      /* 用真实视口坐标而不是 offsetLeft：单页↔双页切换时 rp 可能还没完成布局，
+         offsetLeft 会短暂为 0，分隔线就贴到最左边 / 宽度算错。 */
+      var rEl = rightPanelEl();
+      if (!rEl) { rvSplit.style.display = 'none'; return; }
+      var rr = rEl.getBoundingClientRect(), lr = layoutEl.getBoundingClientRect();
+      rvSplit.style.left = (rr.left - lr.left) + 'px';
+      rvSplit.style.height = rr.height + 'px';
     };
     placeRvSplit();
     addEventListener('resize', placeRvSplit);
+    /* 复盘页自己会切步骤、切单页/双页，这些都不经过我们上面的代码，
+       所以分隔线必须自己盯着布局变化重算 —— 否则第 2 页看不到它、
+       翻到别的步骤又冒出来（她 2026-10-03 反馈的原问题）。 */
+    if (window.MutationObserver && layoutEl) {
+      var rafId = 0;
+      var schedule = function () {
+        if (rafId) return;
+        rafId = requestAnimationFrame(function () { rafId = 0; placeRvSplit(); });
+      };
+      new MutationObserver(schedule).observe(layoutEl, {
+        childList: true, subtree: true, attributes: true,
+        attributeFilter: ['class', 'style', 'hidden']
+      });
+      var rObs = rightPanelEl();
+      if (rObs) new MutationObserver(schedule).observe(rObs, {
+        childList: true, subtree: true, attributes: true,
+        attributeFilter: ['class', 'style', 'hidden']
+      });
+    }
+    /* 图片懒加载完成会改变右栏高度，也跟着重算一次 */
+    addEventListener('load', schedule, true);
   }
 
   async function enterInk() {
@@ -361,6 +465,8 @@
           engine = await window.EkzMark.init(PAPER + '-rv', []);
           setupRvFollow();
           setupRvSplit();
+          /* 供 scripts/test-rv.js 驱动真实存储链路做回归 */
+          window.__ekzEngine = engine;
         }
       }
       if (!inkBar) wireInkBar();
@@ -406,10 +512,6 @@
     split.id = 'ekz-split';
     layoutEl.appendChild(split);
 
-    function rightPanelEl() {
-      return document.querySelector('.rightPanel') ||
-        document.querySelector('.layout .panel:last-child');
-    }
     function placeSplit() {
       var rp = rightPanelEl();
       if (!rp) return;

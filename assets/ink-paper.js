@@ -43,7 +43,20 @@
     const lctx = lv.getContext('2d');
 
     let W = 0, H = 0;
+    /* 【2026-10-03 多指修复】原来只有一个 cur 槽位。
+       两根手指同时按住画布时，后按下的那根会把前一根的笔画整个顶掉，
+       前一根抬手时 endPointer 提交的是后一根的曲线 —— 于是"第一笔消失"。
+       现在按 pointerId 分槽：Map<pointerId, 笔画>，
+       每根手指/触控笔各写各的，抬手时各自提交。
+       cur 保留成"当前主笔"，供拉直、长按变橡皮这类单笔逻辑使用。 */
+    const curs = new Map();                 /* pointerId -> 笔画 */
     let cur = null;
+    let curId = null;
+    function pickMain() {
+      const first = curs.entries().next();
+      if (first.done) { cur = null; curId = null; return; }
+      curId = first.value[0]; cur = first.value[1];
+    }
     let editing = false;
 
     /* ---- 画一笔（同笔记页 stroke()） ---- */
@@ -87,9 +100,12 @@
     }
     function drawLive() {
       lctx.clearRect(0, 0, W, H);
-      if (!cur || state.hidden) return;
-      if (cur.tool === 'er') return;
-      stroke(lctx, cur);
+      if (state.hidden) return;
+      /* 画所有还在进行的笔画（多指时不止一条） */
+      for (const s of curs.values()) {
+        if (s.tool === 'er') continue;
+        stroke(lctx, s);
+      }
     }
     function drawEraserCursor(x, y, r) {
       lctx.clearRect(0, 0, W, H);
@@ -108,13 +124,15 @@
     }
 
     /* ---- 尺寸 ---- */
+    let resizeRetry = null;
     function resize() {
       const d = DPR();
       const w = host.clientWidth, h = host.clientHeight;
       if (!w || !h) {
         if (resize.tries === undefined) resize.tries = 0;
         if (resize.tries++ > 60) return;
-        setTimeout(resize, 200);
+        clearTimeout(resizeRetry);
+        resizeRetry = setTimeout(resize, 200);   /* destroy 后必须停，否则会一直跑 */
         return;
       }
       resize.tries = 0;
@@ -221,7 +239,8 @@
       if (e.pointerType === 'mouse') return e.button === 0;
       return true; /* 触控笔 */
     }
-    cv.addEventListener('pointerdown', e => {
+    /* 三个监听具名，destroy 时要按引用解绑（见返回对象的 destroy） */
+    const onDown = e => {
       if (readonly || !editing || state.hidden) return;
       /* ---- 手指手势（未开手指写字时）：笔优先防误触；单指滚动、双指缩放 ---- */
       if (e.pointerType === 'touch' && !state.finger) {
@@ -247,12 +266,14 @@
       e.preventDefault();
       if (e.pointerType !== 'mouse') { penActive = true; gestureCleanup(); }
       try { cv.setPointerCapture(e.pointerId); } catch (_) {}
-      holdFired = false;
-      lastPointerRel = rel(e);
-      cur = { tool: state.tool, color: state.tool === 'er' ? '#000' : state.color[state.tool], size: state.size[state.tool], pts: [lastPointerRel] };
+      /* 这一根手指/笔独占一个槽位 */
+      const mine = rel(e);
+      curs.set(e.pointerId, { tool: state.tool, color: state.tool === 'er' ? '#000' : state.color[state.tool], size: state.size[state.tool], pts: [mine] });
+      /* 长按变橡皮 / 拉直这类单笔逻辑只跟主笔走，多指时不互相干扰 */
+      if (!cur) { cur = curs.get(e.pointerId); curId = e.pointerId; holdFired = false; lastPointerRel = mine; }
       if (cur.tool === 'er') {
         eraseDot(cur.pts[0], cur.size);
-        drawEraserCursor(lastPointerRel.x * W, lastPointerRel.y * H, cur.size);
+        drawEraserCursor(mine.x * W, mine.y * H, cur.size);
       } else drawLive();
       if (state.tool !== 'er' && e.pointerType !== 'touch') {
         holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -260,8 +281,9 @@
       }
       if (state.tool === 'hl' || state.tool === 'pen') startHlHold();
       syncTouchAction();
-    });
-    cv.addEventListener('pointermove', e => {
+    };
+    cv.addEventListener('pointerdown', onDown);
+    const onMove = e => {
       /* ---- 手势移动：单指滚动 / 双指缩放 ---- */
       if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
         e.preventDefault();
@@ -278,12 +300,17 @@
         }
         return;
       }
-      if (!cur) return;
-      const touching = (e.buttons > 0) || (cur && cur.tool === 'er');
-      if (touching && (state.tool === 'er' || cur.tool === 'er')) {
-        lastPointerRel = rel(e);
-        const size = cur.tool === 'er' ? cur.size : state.size.er;
-        drawEraserCursor(lastPointerRel.x * W, lastPointerRel.y * H, size);
+      /* 取"这一根"自己的笔画，不是全局主笔 */
+      const mine = curs.get(e.pointerId);
+      if (!mine) return;
+      /* 橡皮光标跟着当前这根走 */
+      if ((e.buttons > 0) || mine.tool === 'er') {
+        if (state.tool === 'er' || mine.tool === 'er') {
+          const now = rel(e);
+          const size = mine.tool === 'er' ? mine.size : state.size.er;
+          drawEraserCursor(now.x * W, now.y * H, size);
+          if (mine === cur) lastPointerRel = now;
+        }
       }
       if (readonly || !editing) return;
       e.preventDefault();
@@ -293,34 +320,37 @@
       }
       const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
       const raw = rel(evs[evs.length - 1]);
-      if (cur.tool === 'er') {
-        const L = cur.pts[cur.pts.length - 1];
+      if (mine.tool === 'er') {
+        const L = mine.pts[mine.pts.length - 1];
         let x = raw.x, y = raw.y, p = raw.p;
         if (L) { x = L.x + (raw.x - L.x) * K; y = L.y + (raw.y - L.y) * K; p = L.p + (raw.p - L.p) * KP; }
         if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) {
           const np = { x, y, p };
-          if (L) eraseSegment(L, np, cur.size); else eraseDot(np, cur.size);
-          cur.pts.push(np);
+          if (L) eraseSegment(L, np, mine.size); else eraseDot(np, mine.size);
+          mine.pts.push(np);
         }
         return;
       }
-      if (cur.tool === 'hl' || cur.tool === 'pen') {
+      /* 拉直/锚点这些单笔状态只对主笔生效 */
+      const isMain = (mine === cur);
+      if (isMain && (mine.tool === 'hl' || mine.tool === 'pen')) {
         if (!hlMoveAnchor) hlMoveAnchor = raw;
         else {
           const ddx = (raw.x - hlMoveAnchor.x) * W, ddy = (raw.y - hlMoveAnchor.y) * H;
           if (ddx * ddx + ddy * ddy > HL_MOVE_TOL * HL_MOVE_TOL) { lastMoveTs = performance.now(); hlMoveAnchor = raw; }
         }
       }
-      if ((cur.tool === 'hl' || cur.tool === 'pen') && hlStraightened) {
-        cur.pts = [cur.pts[0], { x: raw.x, y: raw.y, p: raw.p }];
+      if (isMain && (mine.tool === 'hl' || mine.tool === 'pen') && hlStraightened) {
+        mine.pts = [mine.pts[0], { x: raw.x, y: raw.y, p: raw.p }];
         drawLive(); return;
       }
-      const L = cur.pts[cur.pts.length - 1];
+      const L = mine.pts[mine.pts.length - 1];
       let x = raw.x, y = raw.y, p = raw.p;
       if (L) { x = L.x + (raw.x - L.x) * K; y = L.y + (raw.y - L.y) * K; p = L.p + (raw.p - L.p) * KP; }
-      if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) { cur.pts.push({ x, y, p }); }
+      if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) { mine.pts.push({ x, y, p }); }
       drawLive();
-    });
+    };
+    cv.addEventListener('pointermove', onMove);
     function endPointer(e) {
       /* ---- 手势收尾 ---- */
       if (e && e.pointerType === 'touch' && touches.has(e.pointerId)) {
@@ -332,24 +362,35 @@
         return;
       }
       if (e && e.pointerType === 'pen') penActive = false;
-      clearTimeout(holdTimer); holdTimer = null; holdStart = null;
-      stopHlHold(); hlStraightened = false; hlMoveAnchor = null;
-      if (!cur) return;
-      if (cur.pts.length) {
-        strokes.push(cur);
+      /* 只收这一根自己的笔画；收完把它那槽删掉，剩下的自动升为主笔 */
+      const id = e ? e.pointerId : curId;
+      const mine = id != null ? curs.get(id) : null;
+      if (!mine) return;
+      curs.delete(id);
+      pickMain();
+      /* 长按/拉直这些定时器只对主笔有意义，主笔换了才重置 */
+      if (curId === id || !curId) {
+        clearTimeout(holdTimer); holdTimer = null; holdStart = null;
+        stopHlHold(); hlStraightened = false; hlMoveAnchor = null;
+      }
+      if (mine.pts.length) {
+        strokes.push(mine);
         if (!state.hidden) {
-          if (cur.tool !== 'er' && cur.tool !== 'hl') stroke(ctx, cur);
+          if (mine.tool !== 'er' && mine.tool !== 'hl') stroke(ctx, mine);
           else redraw();
         }
         onDirty();
       }
-      cur = null; holdFired = false;
+      holdFired = false;
       lctx.clearRect(0, 0, W, H);
+      if (curs.size) drawLive();
       syncTouchAction();
     }
     cv.addEventListener('pointerup', endPointer);
     cv.addEventListener('pointercancel', endPointer);
-    cv.addEventListener('pointerleave', () => { if (cur) endPointer(); });
+    /* pointerleave 也要带上 pointerId，否则多指时不知道该收哪一根 */
+    const onLeave = e => { if (curs.has(e.pointerId)) endPointer(e); };
+    cv.addEventListener('pointerleave', onLeave);
 
     /* 导出：白底 + 容器里的底图（如果有）+ 笔迹；橡皮只擦笔迹不擦底图 */
     function exportCanvas() {
@@ -389,8 +430,25 @@
         syncTouchAction();
         cv.style.pointerEvents = (on && !readonly) ? 'auto' : 'none';
       },
-      clearLive() { lctx.clearRect(0, 0, W, H); },
-      destroy() { cv.remove(); lv.remove(); }
+      clearLive() { lctx.clearRect(0, 0, W, H); curs.clear(); pickMain(); },
+      /* 【2026-10-03 补】原来只把两个 canvas 从 DOM 摘掉就算完事，
+         但 window/document 上的监听、ResizeObserver、长按与拉直定时器
+         全都还在跑。复盘页每换一步就重建一张纸，旧的继续跑，攒多了会卡。
+         现在全部解绑。 */
+      destroy() {
+        clearTimeout(holdTimer); holdTimer = null;
+        clearTimeout(resizeRetry); resizeRetry = null;
+        stopHlHold();
+        curs.clear(); pickMain();
+        if (ro) { ro.disconnect(); ro = null; }
+        removeEventListener('resize', resize);
+        cv.removeEventListener('pointerdown', onDown);
+        cv.removeEventListener('pointermove', onMove);
+        cv.removeEventListener('pointerup', endPointer);
+        cv.removeEventListener('pointercancel', endPointer);
+        cv.removeEventListener('pointerleave', onLeave);
+        cv.remove(); lv.remove();
+      }
     };
   }
 

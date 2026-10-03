@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="zh-CN" data-root="../../"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>2010 Text 2 · 复盘模式</title>
 <style>
 :root{--bg:#eef2f6;--paper:#fff;--ink:#172033;--muted:#667085;--line:#d9e0e8;--accent:#334155}
@@ -25,6 +25,7 @@ button,select{font:13px/1.2 "Microsoft YaHei";border:1px solid #cfd6df;backgroun
   .lectureBody,.fullContent{overflow-wrap:anywhere}
   .table-wrap{max-width:100%;overflow-x:auto}
 }
+
 </style><link rel="icon" href="../../icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
 </head><body>
@@ -178,5 +179,5 @@ next.onclick=()=>{if(idx<DATA.length-1){idx++;render()}};prev.onclick=()=>{if(id
  }
 };jump.onchange=()=>{if(jump.value!==''){idx=Number(jump.value);all=false;lastRenderedIdx=-1;render()}};
 document.addEventListener('keydown',e=>{if(all)return;if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();next.click()}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();prev.click()}});render();
-</script><script src="../../assets/note-fab.js" data-paper="2010-text2" data-year="2010" data-label="Text 2" defer></script>
+</script><script src="../../manifest.js?v=20261003g" defer></script><script src="../../assets/ekz-nav.js?v=20261003g" defer></script><script src="../../assets/ekz-page-nav.js?v=20261003g" defer></script><script src="../../assets/note-fab.js?v=20261003g" data-paper="2010-text2" data-year="2010" data-label="Text 2" defer></script>
 </body></html>

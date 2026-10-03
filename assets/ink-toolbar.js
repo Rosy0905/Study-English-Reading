@@ -14,7 +14,7 @@
   if (window.EkzInkBar) return;
 
   /* ================= 状态 ================= */
-  const S = { pen: [1, 6, .5, 2.5], hl: [8, 34, 2, 16], er: [10, 60, 2, 28] };
+  const S = { pen: [1, 6, .5, 2.5], hl: [8, 34, 2, 16], er: [8, 46, 2, 20] };
   const PRESET = {
     pen: ['#111827', '#374151', '#6b7280', '#dc2626', '#ea580c', '#d97706', '#ca8a04',
           '#16a34a', '#059669', '#0891b2', '#2563eb', '#4f46e5', '#7c3aed', '#c026d3',
@@ -23,7 +23,7 @@
          '#93c5fd', '#a5b4fc', '#f9a8d4', '#f0abfc', '#fed7aa', '#e9d5ff', '#bbf7d0',
          '#fef08a', '#fecaca']
   };
-  const st = { tool: 'pen', color: { pen: '#dc2626', hl: '#fde047' }, size: { pen: 2.5, hl: 16, er: 28 }, finger: false, hidden: false };
+  const st = { tool: 'pen', color: { pen: '#dc2626', hl: '#fde047' }, size: { pen: 2.5, hl: 16, er: 20 }, finger: false, hidden: false };
   try {
     const raw = localStorage.getItem('drawn.prefs.v1');
     if (raw) { const o = JSON.parse(raw); Object.assign(st.color, o.color || {}); Object.assign(st.size, o.size || {}); st.tool = o.tool || 'pen'; }
@@ -150,7 +150,7 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
   user-select:none;-webkit-user-select:none;
   will-change:transform;display:none}
 #ekz-inkmask{position:fixed;inset:0;z-index:9996;background:rgba(28,22,26,.24);
-  -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
   opacity:0;visibility:hidden;transition:opacity .18s,visibility .18s}
 #ekz-inkmask.open{opacity:1;visibility:visible}
 #ekz-inkpal .pHead{display:flex;align-items:center;justify-content:space-between;margin:0 4px 12px;gap:8px}
@@ -200,7 +200,7 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
   transition:opacity .18s,transform .18s;white-space:nowrap}
 #ekz-inktoast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 #ekz-inkdlg{position:fixed;inset:0;z-index:9998;background:rgba(28,22,26,.28);
-  -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
   display:none;align-items:center;justify-content:center;padding:20px}
 #ekz-inkdlg.open{display:flex}
 #ekz-inkdlg .ekzdlgCard{background:#fff;border:1px solid #f3d7e3;border-radius:18px;

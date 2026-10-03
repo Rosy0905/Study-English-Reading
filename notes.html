@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-root="">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -83,18 +83,39 @@ body{background:#f7f4fb;font-family:'PingFang SC','Microsoft YaHei',sans-serif;c
   </div>
 </div>
 
-<script src="manifest.js?v=20261002b"></script>
-<script src="assets/ekz-db.js"></script>
-<script src="assets/ink-toolbar.js"></script>
-<script src="assets/ekz-export.js"></script>
-<script src="assets/ekz-pdf.js"></script>
-<script src="assets/ink-paper.js"></script>
+<script src="manifest.js?v=20261003g"></script>
+<script src="assets/ekz-db.js?v=20261003g"></script>
+<script src="assets/ink-toolbar.js?v=20261003g"></script>
+<script src="assets/ekz-export.js?v=20261003g"></script>
+<script src="assets/ekz-pdf.js?v=20261003g"></script>
+<script src="assets/ink-paper.js?v=20261003g"></script>
+<script src="assets/ekz-nav.js?v=20261003g"></script>
 <script>
 /* ============================================================
    手写笔记页（单张纸 · 与真题页批注共用同一套引擎和工具栏）
    ============================================================ */
 const params=new URLSearchParams(location.search);
-const NOTE_ID=params.get('id')||('free-'+Date.now());
+/* 自由笔记（没带 id 进来的）必须有一个稳定的 ID。
+   原来这里直接用 free-Date.now()，每次刷新都是一个新 ID ——
+   于是 dbGet 永远读不到旧记录，写进去的笔记刷新一次就"消失"了
+   （存是存进了库里，只是再也找不回来，属于静默丢数据，最坏的一种）。
+   现在把第一次生成的 ID 存进 sessionStorage，之后一直用它；
+   点【清空所有数据】会清 sessionStorage，那时重新开一个空白纸，符合预期。 */
+const FREEKEY='ekz.freeNoteId';
+function resolveNoteId(){
+  const fromUrl=params.get('id');
+  if(fromUrl)return fromUrl;
+  try{
+    const saved=sessionStorage.getItem(FREEKEY);
+    if(saved){sessionStorage.setItem(FREEKEY,saved);return saved;}
+    const made='free-'+Date.now();
+    sessionStorage.setItem(FREEKEY,made);
+    return made;
+  }catch(e){
+    return 'free-'+Date.now();   /* 隐私模式禁 sessionStorage，只能退化成一次性 */
+  }
+}
+const NOTE_ID=resolveNoteId();
 
 let item=null;
 (function findItem(){
@@ -108,54 +129,95 @@ document.getElementById('title').textContent=NOTE_TITLE+' · 手写笔记';
 document.title=NOTE_TITLE+' · 手写笔记';
 const EXPORT_NAME=(item?item.id.replace(/[^0-9a-z-]/gi,''):'note')+'-手写笔记.png';
 
+/* ---- 顶栏互跳：真题页 -> 【做题】【复盘】（她 2026-10-03 加） ---- */
+if(item) EkzNav.mountNav('zhen',{item:item,year:item.year,btnCls:'tbtn'});
+
 /* ---- 存取 ---- */
+/* ekz-db.js 正常加载时走它（内部复用连接、事务挂全 onabort）。
+   下面的 fallback 只在脚本加载失败时兜底，版本号必须跟 ekz-db.js 一致，
+   否则库已是 v2 时 open(...,1) 会抛 VersionError，笔记页整页静默失效。 */
+let _fbDB=null;
 function openDB(){
   if(window.ekzDB)return window.ekzDB.open();
+  if(_fbDB)return Promise.resolve(_fbDB);
   return new Promise((resolve,reject)=>{
-    const req=indexedDB.open('ekz-notes-v2',1);
+    const req=indexedDB.open('ekz-notes-v2',2);
     req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('notes'))db.createObjectStore('notes',{keyPath:'id'});};
-    req.onsuccess=()=>resolve(req.result);
+    req.onsuccess=()=>{_fbDB=req.result;resolve(_fbDB);};
     req.onerror=()=>reject(req.error);
+    req.onblocked=()=>reject(new Error('数据库被其他标签页占用'));
   });
 }
-async function dbGet(id){
-  const db=await openDB();
+function runTx(db,mode,fn){
   return new Promise((resolve,reject)=>{
-    const rq=db.transaction('notes','readonly').objectStore('notes').get(id);
-    rq.onsuccess=()=>resolve(rq.result||null);
-    rq.onerror=()=>reject(rq.error);
+    let tx;
+    try{tx=db.transaction('notes',mode);}catch(e){reject(e);return;}
+    let out=null;
+    try{out=fn(tx.objectStore('notes'));}catch(e){try{tx.abort();}catch(_){}reject(e);return;}
+    tx.oncomplete=()=>resolve(out&&out.result!==undefined?out.result:out);
+    tx.onerror=()=>reject(tx.error);
+    tx.onabort=()=>reject(tx.error||new Error('事务被中止'));
   });
 }
-async function dbPut(rec){
-  const db=await openDB();
+/* 读请求必须在 onsuccess 里取result：IDBRequest 自己也有 result 属性（指向自身），
+   在 oncomplete 时反查会拿到 request 对象而不是数据。 */
+function reqTx(db,fn){
   return new Promise((resolve,reject)=>{
-    const tx=db.transaction('notes','readwrite');
-    tx.objectStore('notes').put(rec);
-    tx.oncomplete=()=>resolve(1);
+    let tx;
+    try{tx=db.transaction('notes','readonly');}catch(e){reject(e);return;}
+    const r=fn(tx.objectStore('notes'));
+    r.onsuccess=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error);
+    tx.onabort=()=>reject(tx.error||new Error('事务被中止'));
     tx.onerror=()=>reject(tx.error);
   });
 }
+async function dbGet(id){
+  if(window.ekzDB&&window.ekzDB.get)return window.ekzDB.get(id);
+  const db=await openDB();
+  const r=await reqTx(db,st=>st.get(id));
+  return r===undefined?null:r;
+}
+async function dbPut(rec){
+  if(window.ekzDB&&window.ekzDB.put)return window.ekzDB.put(rec);
+  const db=await openDB();
+  return runTx(db,'readwrite',st=>{st.put(rec);return 1;});
+}
 
 let strokes=[]; /* 持久数组：引擎直接往里 push，保存时整体快照 */
-let dirty=false,saveTimer=null;
+let dirty=false,saveTimer=null,saving=false;
 function markDirty(){
   dirty=true;
   clearTimeout(saveTimer);
   saveTimer=setTimeout(doSave,700);
 }
 async function doSave(){
-  if(!dirty)return;
+  if(!dirty||saving)return;
+  saving=true;
+  /* 记下这一轮要存的笔数：await 期间新画的笔不算在这次里，
+     存完只把 dirty 清回「仍然脏」而不是直接false，否则新笔迹被吞。 */
+  const snapLen=strokes.length;
   try{
     await dbPut({id:NOTE_ID,strokes:strokes,migratedV4:'1',ts:Date.now()});
-    dirty=false;
-  }catch(err){console.error('保存失败',err);}
+    dirty=strokes.length!==snapLen;
+    if(dirty&&!saveTimer)saveTimer=setTimeout(doSave,700);
+  }catch(err){
+    console.error('保存失败',err);
+    dirty=true;
+  }finally{
+    saving=false;
+  }
 }
+/* 三个出口都挂上：beforeunload 在移动端常常根本不触发，
+   pagehide 和 visibilitychange 才是真正可靠的路径。 */
+window.addEventListener('pagehide',()=>{if(dirty)doSave();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&dirty)doSave();});
 window.addEventListener('beforeunload',()=>{if(dirty)doSave();});
 
 /* ---- 启动：加载笔迹 → 工具栏 + 纸张 ---- */
 (async function init(){
   try{
-    if(!window.ekzDB)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='assets/ekz-db.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    if(!window.ekzDB)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='assets/ekz-db.js?v=20261003g';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
     await window.ekzDB.migrate();
   }catch(_){}
 

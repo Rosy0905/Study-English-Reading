@@ -18,18 +18,22 @@
 
   function openDB() {
     if (window.ekzDB) return window.ekzDB.open();
+    let fb = null;
     return new Promise((res, rej) => {
-      const r = indexedDB.open('ekz-notes-v2', 1);
+      /* 版本号必须与 ekz-db.js 一致（2），否则库已升级后 open(...,1) 抛 VersionError */
+      const r = indexedDB.open('ekz-notes-v2', 2);
       r.onupgradeneeded = () => {
         const db = r.result;
         if (!db.objectStoreNames.contains('notes')) db.createObjectStore('notes', { keyPath: 'id' });
       };
-      r.onsuccess = () => res(r.result);
+      r.onsuccess = () => { fb = r.result; res(fb); };
       r.onerror = () => rej(r.error);
+      r.onblocked = () => rej(new Error('数据库被其他标签页占用'));
     });
   }
   async function loadMark(id) {
     try {
+      if (window.ekzDB && window.ekzDB.get) return await window.ekzDB.get(id);
       const db = await openDB();
       return await new Promise((res, rej) => {
         const rq = db.transaction('notes', 'readonly').objectStore('notes').get(id);
@@ -40,12 +44,14 @@
   }
   async function saveMark(rec) {
     try {
+      if (window.ekzDB && window.ekzDB.put) { await window.ekzDB.put(rec); return; }
       const db = await openDB();
       await new Promise((res, rej) => {
         const tx = db.transaction('notes', 'readwrite');
         tx.objectStore('notes').put(rec);
         tx.oncomplete = () => res(1);
         tx.onerror = () => rej(tx.error);
+        tx.onabort = () => rej(tx.error || new Error('事务被中止'));
       });
     } catch (err) { console.error('[ekz] 笔记保存失败', err); }
   }
@@ -84,7 +90,12 @@
       clearTimeout(dirtyTimer);
       dirtyTimer = setTimeout(function () { saveMark(rec); }, 800);
     }
-    function flush() { snapshotAll(); clearTimeout(dirtyTimer); return saveMark(rec); }
+    function flush() { snapshotAll(); clearTimeout(dirtyTimer); dirtyTimer = null; return saveMark(rec); }
+    /* 三个出口都挂：移动端 beforeunload 常常不触发 */
+    addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') flush();
+    });
     addEventListener('beforeunload', flush);
 
     function activeEntry() {

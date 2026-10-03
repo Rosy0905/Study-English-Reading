@@ -31,7 +31,7 @@ body{
   background:var(--bg);color:var(--text);
   -webkit-font-smoothing:antialiased;min-height:100vh;
 }
-.wrap{max-width:900px;margin:0 auto;padding:24px 18px 60px;}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 18px 60px;}
 
 /* ===== 顶部 ===== */
 .hero{
@@ -68,11 +68,11 @@ body{
 .recent{margin-bottom:12px;}
 .secTitle{font-size:14px;font-weight:700;color:var(--accent-deep);margin-bottom:10px;}
 .recentRow{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 6px;}
-.recentRow::-webkit-scrollbar{height:4px;}
+.recentRow::-webkit-scrollbar{height:3px;}
 .recentRow::-webkit-scrollbar-track{background:transparent;}
-.recentRow::-webkit-scrollbar-thumb{background:#f6c1d7;border-radius:2px;}
-.recentRow::-webkit-scrollbar-thumb:hover{background:#f0a8c6;}
-.recentRow{scrollbar-width:thin;scrollbar-color:#f6c1d7 transparent;}
+.recentRow::-webkit-scrollbar-thumb{background:rgba(246,193,215,.45);border-radius:2px;transition:background .2s;}
+.recentRow:hover::-webkit-scrollbar-thumb{background:rgba(240,168,198,.75);}
+.recentRow{scrollbar-width:thin;scrollbar-color:rgba(246,193,215,.45) transparent;}
 .recentCard{
   flex:0 0 auto;display:flex;align-items:center;gap:10px;
   background:#fff;border:1px solid var(--line);border-radius:999px;
@@ -195,7 +195,7 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
   <div class="empty" id="emptyTip">没有找到匹配的篇目，换个关键词试试？(｡•́︿•̀｡)</div>
 
   <footer>
-    绿点 = 已收录 · 星标 = 收藏 · 学完 = 标记完成<br>
+    紫点 = 已收录 · 学完 = 标记完成 · ★ = 收藏<br>
     笔记保存在这台电脑的浏览器里，重要笔记记得用顶部「笔记备份」导出哦
   </footer>
 </div>
@@ -203,14 +203,25 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js"></script>
-<script src="assets/ekz-export.js"></script>
-<script src="assets/ekz-pdf.js"></script>
-<script src="manifest.js?v=20261002b"></script>
+<script src="assets/ekz-db.js?v=20261003g"></script>
+<script src="assets/ekz-export.js?v=20261003g"></script>
+<script src="assets/ekz-pdf.js?v=20261003g"></script>
+<script src="manifest.js?v=20261003g"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
 const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(_){}};
+
+/* 【返回主页要不要置顶 · 2026-10-03 她定的规则】
+ * 只一种情况置顶：从顶部「最近学习」点进去的。
+ * 其余（从下面某年的篇目卡片点进去、直接敲网址、从攻略页回去）都恢复原滚动位置，
+ * 因为那种情况下她本来就是停在某个年份上跳过去的，回原地才不丢上下文。
+ * 标记由主页自己打：最近学习那排卡片点进去时写，
+ * 年份卡片点进去时清掉（清掉很重要，否则标记会串到下一次）。
+ * 浏览器「后退」回到主页走 bfcache，脚本不重跑，所以额外在 pageshow 里清一次。 */
+const TOPKEY='ekz.homeTop';
+const setTopMark=v=>{try{v?sessionStorage.setItem(TOPKEY,'1'):sessionStorage.removeItem(TOPKEY)}catch(e){}};
+addEventListener('pageshow',e=>{ if(e.persisted) setTopMark(false); });
 
 let favs=load(LS_FAV,[]), doneList=load(LS_DONE,[]), recent=load(LS_RECENT,[]);
 
@@ -233,6 +244,11 @@ function slotsOf(year){
 const yearList=document.getElementById('yearList');
 const years=Object.keys(LIBRARY).map(Number).sort((a,b)=>a-b); /* 旧到新 */
 
+/* 拼 HTML 前的最小转义。课程卡片的 label 目前来自本地数据包、进不来，
+   但多一层总比少一层好 —— 以后万一有外部来源，这里就是唯一的护栏。 */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function cardHTML(year,slot){
   if(!slot.item){
     return `<div class="card missing">
@@ -243,16 +259,16 @@ function cardHTML(year,slot){
   const it=slot.item;
   const faved=favs.includes(it.id), done=doneList.includes(it.id);
   const label=slot.num?`Text ${slot.num}`:it.label;
-  return `<div class="card have${faved?' faved':''}" data-id="${it.id}" data-year="${year}" data-label="${label}">
+  return `<div class="card have${faved?' faved':''}" data-id="${esc(it.id)}" data-year="${esc(year)}" data-label="${esc(label)}">
     <div class="cardTop">
-      <span class="dot"></span><span class="name">${label}</span>
+      <span class="dot"></span><span class="name">${esc(label)}</span>
       <button class="donePill${done?' on':''}" title="标记学完">${done?'✓ 学完':'学完'}</button>
       <button class="starBtn${faved?' on':''}" title="收藏">★</button>
     </div>
     <div class="btnRow">
-      ${it.zuoti?`<a class="btn zuoti" href="${it.zuoti}" data-mode="做题模式">做题模式</a>`:'<span class="todo">暂未更新</span>'}
-      ${it.fupan?`<a class="btn fupan" href="${it.fupan}" data-mode="复盘模式">复盘模式</a>`:'<span class="todo">暂未更新</span>'}
-      ${it.note?`<a class="btn noteBtn" href="${it.note}" data-mode="手写笔记" title="手写笔记">✍️</a>`:'<span class="todo" title="手写笔记待更新"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b7a9cf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span>'}
+      ${it.zuoti?`<a class="btn zuoti" href="${esc(it.zuoti)}" data-mode="做题模式">做题模式</a>`:'<span class="todo">暂未更新</span>'}
+      ${it.fupan?`<a class="btn fupan" href="${esc(it.fupan)}" data-mode="复盘模式">复盘模式</a>`:'<span class="todo">暂未更新</span>'}
+      <a class="btn noteBtn" href="${esc(it.note||('notes.html?id='+encodeURIComponent(it.id)))}" data-mode="手写笔记" title="手写笔记">✍️</a>
     </div>
   </div>`;
 }
@@ -282,17 +298,28 @@ function render(filter=''){
 }
 
 /* ---- 卡片交互 ---- */
+/* 最近学习去重。
+   原来只按 id 过滤，但兜底分支写进去的 id 是 'href:'+href —— 两套键空间，
+   同一篇就会同时存在「正常 id 那条」和「href: 那条」，卡片上出现两张。
+   现在统一：能拿到 id 就按 id 去重；只有连 id 都没有的脏数据才退回按 href 去重。 */
+function sameEntry(r,id,href){
+  if(id)return r.id===id;
+  return !!href&&r.href===href;
+}
 function pushRecent(id,year,label,href){
-  recent=recent.filter(r=>r.id!==id);
-  recent.unshift({id,year:String(year),label,href,ts:Date.now()});
-  recent=recent.slice(0,12);
+  recent=recent.filter(r=>!sameEntry(r,id,href));
+  /* id 缺失的老数据顺手补上，别再写 'href:' 前缀那种半个 id */
+  const rid=id||(href?String(href):'');
+  if(!rid)return;
+  recent.unshift({id:rid,year:String(year||''),label:String(label||''),href:String(href||''),ts:Date.now()});
+  recent=recent.slice(0,8);
   save(LS_RECENT,recent);
 }
 function bindCards(){
   document.querySelectorAll('.card.have').forEach(card=>{
     const id=card.dataset.id, year=card.dataset.year, label=card.dataset.label;
     card.querySelectorAll('.btnRow .btn').forEach(a=>{
-      a.addEventListener('click',()=>pushRecent(id,year,label,a.getAttribute('href')));
+      a.addEventListener('click',()=>{ setTopMark(false); pushRecent(id,year,label,a.getAttribute('href')); });
     });
     card.querySelector('.starBtn').addEventListener('click',e=>{
       e.preventDefault();
@@ -314,19 +341,49 @@ function bindCards(){
 }
 
 /* ---- 最近学习 ---- */
+/* 最近学习卡片：原来是把 label/href 直接拼进 innerHTML，
+   而这三个字段都能从导入的 JSON 进来（2026-10-03 实测 label 里的
+   <img onerror> 真的被执行了）。改成用 createElement + textContent 建节点，
+   文本自动转义，注入链断掉。
+   data-* 走 setAttribute 本身是安全的，但 href 要额外挡一下 javascript:。 */
+function buildRecentCard(r){
+  const c=document.createElement('div');
+  c.className='recentCard';
+  const href=String(r.href||'');
+  if(/^\s*javascript:/i.test(href)){c.classList.add('badHref');c.dataset.href='';}
+  else c.dataset.href=href;
+  c.dataset.id=r.id||'';
+  c.dataset.year=r.year||'';
+  c.dataset.label=r.label||'';
+  const d=new Date(r.ts);
+  const name=document.createElement('span');
+  name.className='rcName';
+  name.textContent=(r.year||'')+' 年 '+(r.label||'');
+  const date=document.createElement('span');
+  date.className='rcDate';
+  date.textContent=isNaN(d.getTime())?'':(d.getMonth()+1)+'月'+d.getDate()+'日';
+  c.appendChild(name);
+  c.appendChild(date);
+  return c;
+}
 function renderRecent(){
   const sec=document.getElementById('recentSec'), row=document.getElementById('recentRow');
   if(!recent.length){sec.style.display='none';return;}
   sec.style.display='';
-  row.innerHTML=recent.slice(0,8).map(r=>{
-    const d=new Date(r.ts);
-    return `<div class="recentCard" data-href="${r.href}">
-      <span class="rcName">${r.year} 年 ${r.label}</span>
-      <span class="rcDate">${d.getMonth()+1}月${d.getDate()}日</span>
-    </div>`;
-  }).join('');
+  row.textContent='';
+  recent.slice(0,8).forEach(r=>row.appendChild(buildRecentCard(r)));
   row.querySelectorAll('.recentCard').forEach(c=>{
-    c.addEventListener('click',()=>location.href=c.dataset.href);
+    c.addEventListener('click',()=>{
+      // 跳转前先置顶：她 2026-10-03 反馈"从最近学习点进去不会更新位置"。
+      // 不改的话，这条记录的时间戳一直是旧的，下次回主页仍停在原位。
+      if(!c.dataset.href)return;
+      /* 统一走 pushRecent：有 id 按 id 去重，没 id 才按 href。
+         原来这里自己写了一套，还写出 'href:' 前缀的半个 id，
+         和 pushRecent 的键空间对不上，同一篇会出现两张卡片。 */
+      pushRecent(c.dataset.id,c.dataset.year,c.dataset.label,c.dataset.href);
+      setTopMark(true);   // 从最近学习进去的 → 回主页强制置顶
+      location.href=c.dataset.href;
+    });
   });
 }
 
@@ -335,38 +392,389 @@ const search=document.getElementById('search'), clearBtn=document.getElementById
 let searchTimer=null;
 search.addEventListener('input',()=>{
   clearTimeout(searchTimer);
-  searchTimer=setTimeout(()=>render(search.value),120);
-  clearBtn.classList.toggle('show',!!search.value);
+  searchTimer=setTimeout(()=>{ clearBtn.classList.toggle('show',!!search.value); render(search.value); },120);
 });
 clearBtn.addEventListener('click',()=>{search.value='';clearBtn.classList.remove('show');render();});
+
+/* 搜索态只有一个真相来源：搜索框。
+   原来 render() 只管画列表，搜索框和 clear 按钮的显示状态是各写各的，
+   于是导入/清空后列表已经是全量了、搜索框却还留着旧关键词，
+   看着像"没生效"。统一走这个函数收口。 */
+function syncSearchUI(){
+  const has=!!search.value;
+  clearBtn.classList.toggle('show',has);
+  render(search.value);
+}
 
 renderRecent();
 render();
 
+/* ---- 主页位置记忆（她 2026-10-03 要求：刷新后停在原处） ----
+ * 记两样：滚动位置 + 当时视口里最靠上的年份。
+ * 只用 sessionStorage —— 刷新保留、关掉标签页自动清空，
+ * 不会像 localStorage 那样隔天回来还停在老地方。
+ * 搜索状态下不恢复（搜索结果的布局和全量列表不同，位置没意义）。
+ *
+ * 【坑】早先只按「年份」scrollIntoView 恢复，但 scrollIntoView 会把
+ * 年份块顶到视口上沿，丢掉块内的具体偏移；而且卡片多时布局还没稳定，
+ * 恢复出来的位置偏上，她反馈"跟手不对"。
+ * 现在改成：优先用 scrollY 精确恢复，年份只作为 scrollY 拿不到时的兜底。
+ * 另外把页面高度算出来，避免内容还没撑开就 scrollTo 导致落空。 */
+const SCROLL_KEY='ekz.pos.indexScroll', YKEY='ekz.pos.indexYear';
+(function(){
+  const searchEl=document.getElementById('search');
+  const searching=()=>!!(searchEl && searchEl.value.trim());
+  /* restore() 执行期间为 true：期间 save() 不写，
+     否则加载时序里那些临时 scrollY 会把真位置冲掉。 */
+  let restoring=false;
+  /* 置顶时 suppress 计数：置顶是"主动把位置清掉"，不该再被 save() 记回来。
+     原来只删了 SCROLL_KEY，可 scrollTo(0,0) 触发的 scroll 事件
+     经过 200ms 防抖后才跑 save()，那时 restoring 已经解除了，
+     于是 scrollY=0 被写回 SCROLL_KEY —— 位置记忆被置顶污染，
+     之后再刷新就再也回不到原来的地方。
+     现在置顶起效期间一直挡着 save()，多挡几次防抖窗口。
+     声明必须放在 restore()/tookTopMark() 之前，否则调用时会踩 TDZ。 */
+  let suppressSave=0;
+
+  /* 【2026-10-03 修她报的"顶部刷新被甩到 2010"】
+     浏览器自带的 history 滚动恢复会跟我们的 restore() 抢方向盘：
+     页面 DOM 还没建好时它先滚到上次位置，等我们 restore() 再纠正，
+     中间触发的 scroll 事件又被 save() 记下来 —— 每刷一次漂一点。
+     关掉自动恢复，位置完全由 sessionStorage 说了算。 */
+  try{ if('scrollRestoration' in history) history.scrollRestoration='manual'; }catch(e){}
+
+  /* 【2026-10-03 她定的规则】只有从「最近学习」点进去的子页，
+   * 点【主页】回来才强制回顶部（TOPKEY 由主页在点最近学习时写）。
+   * 从年份卡片进去的、敲网址进来的，标记都没有 → 照旧恢复滚动位置。
+   * 标记用完立刻删，免得影响之后在主页的刷新。 */
+  function tookTopMark(){
+    try{
+      if(sessionStorage.getItem(TOPKEY)){
+        sessionStorage.removeItem(TOPKEY);
+        /* 连清两次：第一次删掉旧值，第二次挡掉紧接着 scrollTo 触发的回写。
+           suppressSave 还得再撑一会儿，覆盖那个 200ms 防抖窗口。 */
+        try{sessionStorage.removeItem(SCROLL_KEY);}catch(e){}
+        suppressSave=6;
+        setTimeout(()=>{
+          try{sessionStorage.removeItem(SCROLL_KEY);}catch(e){}
+        },700);
+        return true;
+      }
+    }catch(e){}
+    return false;
+  }
+
+  function restore(){
+    if(searching()) return;                 // 搜索态不恢复
+    if(tookTopMark()){ scrollTo(0,0); return; }
+
+    /* 【2026-10-03 修】原来读的是 sy>0 才算有效，这是个 bug：
+     * 她人在主页顶部（scrollY=0）时按 Ctrl+Shift+R，YKEY 里还留着
+     * 上次浏览到 2010 年写的值 2010，sy=0 走不进精确分支，
+     * 就掉进年份兜底把她甩到 2010 年去了。
+     * 正确做法：只要 sessionStorage 里**存过** scrollY 就用它，
+     * 0 也是有效值（顶部本来就该是 0）。只有从来没存过才允许年份兜底。 */
+    let sy=null, y=0;
+    try{
+      const raw=sessionStorage.getItem(SCROLL_KEY);
+      if(raw!==null&&raw!=='') sy=+raw;
+      y=+(sessionStorage.getItem(YKEY)||0);
+    }catch(e){ return; }
+    if(sy===null&&y<=0) return;             // 两者都没有 → 老老实实停在顶部
+
+    const apply=()=>{
+      if(searching()) return;
+      const maxY=Math.max(0,document.documentElement.scrollHeight-innerHeight);
+      if(sy!==null){
+        scrollTo(0,Math.max(0,Math.min(sy,maxY)));
+        return;                              // 有精确值就用它，绝不再兜底
+      }
+      // 兜底：只有压根没存过 scrollY 时才按年份定位
+      if(y>0){
+        for(const sec of yearList.querySelectorAll('.yearSec')){
+          if(+sec.dataset.year===y){ sec.scrollIntoView({block:'start'}); return; }
+        }
+      }
+    };
+
+    // 恢复动作做完前，save() 一律不写 —— 否则加载中途的
+    // scroll 事件会把"还没定位完的临时 scrollY"存进去，越刷越偏
+    restoring=true;
+
+    // 连续等几帧，直到文档高度稳定（年份块可能带懒加载样式）
+    let tries=0;
+    (function wait(){
+      if(tries++>30 || searching()){ restoring=false; return; }
+      const h1=document.documentElement.scrollHeight;
+      requestAnimationFrame(()=>{
+        if(document.documentElement.scrollHeight===h1){
+          apply();
+          /* 再多等一帧才解除锁：apply 里 scrollTo 会触发 scroll 事件，
+             那时候 restoring 还是 true，这一下噪声就被挡掉了。 */
+          requestAnimationFrame(()=>{ restoring=false; });
+          return;
+        }
+        wait();
+      });
+    })();
+  }
+
+  /* 置顶时 suppress 计数：声明在上面 restoring 旁边，
+     置顶期间 save() 一律不写回（详见那里的说明）。 */
+
+  // 离开前 / 页面隐藏时都记一次，覆盖各种退出路径
+  function save(){
+    if(restoring) return;                   // 恢复过程中不写回
+    if(suppressSave>0) return;              // 置顶过程中不写回
+    try{
+      sessionStorage.setItem(SCROLL_KEY,String(scrollY));
+      let best=null;
+      for(const sec of yearList.querySelectorAll('.yearSec')){
+        if(sec.getBoundingClientRect().top<=120){ best=sec.dataset.year; }
+      }
+      if(best) sessionStorage.setItem(YKEY,best);
+    }catch(e){}
+  }
+  // 主页不引 ekz-nav.js（它是列表页，没有互跳按钮），所以没有 registerSaver 可用。
+  // 但 scroll/pagehide/visibilitychange 三个监听已经覆盖了所有退出路径。
+  let t=null;
+  addEventListener('scroll',()=>{
+    if(t)return;
+    t=setTimeout(()=>{ t=null; save(); },200);
+  },{passive:true});
+  addEventListener('pagehide',save);
+  addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
+  /* 抑制计数靠定时递减，不依赖任何事件 —— 事件不来它也得自己到期 */
+  setInterval(()=>{ if(suppressSave>0) suppressSave--; },150);
+
+  // 从笔记/做题页点"主页"回来时，若带 ?id= 则滚到那篇
+  try{
+    const back=sessionStorage.getItem('ekz.backToId');
+    if(back && new URLSearchParams(location.search).get('id')){
+      const t2=new URLSearchParams(location.search).get('id');
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const card=yearList.querySelector(`.card[data-id="${t2}"]`);
+        if(card) card.scrollIntoView({block:'center'});
+      }));
+      sessionStorage.removeItem('ekz.backToId');
+      return;                                   // 指定篇目优先于恢复滚动位置
+    }
+  }catch(e){}
+
+/* 老版本留下的脏数据：id 写成 'href:'+href 的那批。
+   它们和正常 id 那条并存会让同一篇显示两张卡片，这里按 href 合并一次。 */
+function dedupeRecent(){
+  try{
+    if(!Array.isArray(recent)||!recent.length)return;
+    const seen=new Set(), out=[];
+    for(const r of recent){
+      if(!r||!r.href)continue;
+      const key=(r.id&&r.id.indexOf('href:')!==0)?r.id:String(r.href);
+      if(seen.has(key))continue;
+      seen.add(key);
+      /* 把 'href:xxx' 换成干净 id，以后 pushRecent 就能正常按 id 去重 */
+      out.push({...r,id:key,year:String(r.year||''),label:String(r.label||''),href:String(r.href)});
+    }
+    if(out.length!==recent.length||recent.some((r,i)=>r.id!==out[i].id)){
+      recent=out.slice(0,8);
+      save(LS_RECENT,recent);
+    }
+  }catch(e){}
+}
+dedupeRecent();
+
+restore();
+})();
+
 /* ---- 笔记备份：导出全部 / 导入 ---- */
+let _fbDB=null;
 function openNotesDB(){
   if(window.ekzDB)return window.ekzDB.open();
+  if(_fbDB)return Promise.resolve(_fbDB);
   return new Promise((res,rej)=>{
     const r=indexedDB.open('ekz-notes-v2',2);
     r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('notes'))db.createObjectStore('notes',{keyPath:'id'});};
-    r.onsuccess=()=>res(r.result);
+    r.onsuccess=()=>{_fbDB=r.result;res(_fbDB);};
     r.onerror=()=>rej(r.error);
+    r.onblocked=()=>rej(new Error('数据库被其他标签页占用'));
   });
 }
 function getAllNotes(){
+  if(window.ekzDB&&window.ekzDB.all)return window.ekzDB.all();
   return openNotesDB().then(db=>new Promise((res,rej)=>{
-    const rq=db.transaction('notes','readonly').objectStore('notes').getAll();
+    const tx=db.transaction('notes','readonly');
+    const rq=tx.objectStore('notes').getAll();
     rq.onsuccess=()=>res(rq.result||[]);
     rq.onerror=()=>rej(rq.error);
+    tx.onabort=()=>rej(tx.error||new Error('事务被中止'));
   }));
 }
+/* 关掉本标签页持有的数据库连接。deleteDatabase 之前必须做，
+   否则走onblocked、库删不掉。 */
+function closeNotesDB(){
+  if(window.ekzDB&&window.ekzDB.close)return window.ekzDB.close();
+  if(_fbDB){try{_fbDB.close();}catch(e){}_fbDB=null;}
+  return Promise.resolve();
+}
+/* 【清空所有数据】
+ * 要抹的痕迹分四类：
+ *   1) IndexedDB 主库 ekz-notes-v2（手写笔记 + 做题批注都在这）
+ *   2) IndexedDB 旧库 ekz-notes-db（留着会挡住 migrate，导致清空后笔记复活）
+ *   3) localStorage：收藏 / 学完 / 最近学习 / 手写工具偏好 / 分栏比例 / 缩放
+ *   4) sessionStorage：位置记忆
+ * 外加 Cache Storage。
+ *
+ * 关键：deleteDatabase 会被同标签页任何还开着的连接卡成 onblocked。
+ * 之前的写法是「关掉 count 那个连接」，但紧接着 getAllNotes() 又新开一个且从不关，
+ * 结果 onblocked 被当成成功、笔记其实没删。所以现在所有读操作都排在
+ * 计数之后统一关连接，blocked 一律算失败并在 toast 里如实说。 */
+/* 键名必须与代码里实际用的完全一致。改这里之前先 grep 一遍 setItem。 */
+const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
+  'ekz-split-ratio','ekz-rv-split-ratio',
+  'drawn.prefs.v1','drawn.paletteOrder.v1','drawn.customColors.v2'];
+const CLEAR_LS_PREFIX=['ekz-zoom-'];
+function wipeAllData(){
+  const stat={notes:0,marks:0,ls:0,ss:0,db:0,cache:0,dbFailed:[]};
+  return getAllNotes().catch(()=>[])
+    .then(notes=>{
+      for(const r of notes){
+        if(r.marks){for(const k in r.marks)stat.marks+=(r.marks[k]||[]).length;}
+      }
+      stat.notes=notes.length;
+      /* 计数用的连接必须先关掉，否则后面 deleteDatabase 一定被挡 */
+      return closeNotesDB();
+    })
+    .then(()=>{
+      const del=name=>{
+        if(window.ekzDB&&window.ekzDB.destroy)return window.ekzDB.destroy(name);
+        return new Promise(res=>{
+          let r;
+          try{r=indexedDB.deleteDatabase(name);}catch(e){stat.dbFailed.push(name);res();return;}
+          r.onsuccess=()=>{stat.db++;res();};
+          r.onerror=r.onblocked=()=>{stat.dbFailed.push(name);res();};
+        });
+      };
+      return del('ekz-notes-v2').then(()=>del('ekz-notes-db'));
+    })
+    .then(()=>{
+      try{
+        CLEAR_LS_EXACT.forEach(k=>{if(localStorage.getItem(k)!==null){localStorage.removeItem(k);stat.ls++;}});
+        Object.keys(localStorage).forEach(k=>{          /* 前缀类的（含 ekz-zoom-xxx） */
+          if(CLEAR_LS_PREFIX.some(p=>k.indexOf(p)===0)){localStorage.removeItem(k);stat.ls++;}
+        });
+      }catch(e){}
+      try{
+        Object.keys(sessionStorage).forEach(k=>{
+          if(k.indexOf('ekz')===0){sessionStorage.removeItem(k);stat.ss++;}
+        });
+      }catch(e){}
+    })
+    .then(()=>{                                        /* Cache Storage：清空但不阻塞流程 */
+      try{
+        if(window.caches&&window.caches.keys){
+          return Promise.all([caches.keys().then(ks=>Promise.all(
+            ks.map(k=>caches.delete(k).then(()=>{stat.cache++;}))
+          ))]).catch(()=>{});
+        }
+      }catch(e){}
+    })
+    .then(()=>stat);
+}
+/* 二次确认：先把"会删掉什么、有多少"摆给她看，确认了才真删
+ * （2026-10-03 她选 B 款：表格式清单，左名右数一行搞定，不换行） */
+function fmtSize(bytes){
+  if(!bytes)return '0 KB';
+  if(bytes<1024)return bytes+' B';
+  if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';
+  return (bytes/1048576).toFixed(2)+' MB';
+}
+/* 把一条记录归到三类：做题页批注 / 复盘页批注 / 真题页手写笔记。
+   判据是记录 id 和槽位名：
+     <paper>-mark        做题页（slot: article / question）
+     <paper>-rv-mark     复盘页（slot: rv-left-annotated / rv-right-step-N）
+     其它带 strokes/pages 的  笔记页自由笔记（真题页底图）
+   之前统计只有"有 marks 就算批注"一条粗判据，
+   复盘页批注被并进"做题页批注"里，她 2026-10-03 要求分开列才改成现在这样。 */
+function classifyRec(r){
+  if(r&&r.marks&&typeof r.marks==='object'){
+    const isRv=/-rv-mark$/.test(r.id||'')||Object.keys(r.marks).some(k=>k.indexOf('rv-')===0);
+    return isRv?'rv':'do';
+  }
+  return 'note';
+}
+/* 笔数口径（已实测，见 scripts/test-count.js）：
+     写字 3 笔 → 撤销 1 次 → 剩 2 条（撤销是减一条，不会变两笔）
+     橡皮擦一下 → 记录条数 +1（橡皮本身也是一条，存着才能重画/撤销）
+   两个方向都跟「我写了多少字」对不上，所以界面上只报篇数，不报笔数。 */
+function tallyRecs(recs){
+  const t={do:{n:0},rv:{n:0},note:{n:0},bytes:0};
+  recs.forEach(r=>{
+    t[classifyRec(r)].n++;
+    /* 体积：JSON 序列化后的字节数。笔记都是坐标数组，
+       序列化长度跟实际占用一个量级，够她判断"值不值得备份" */
+    try{t.bytes+=new Blob([JSON.stringify(r)]).size;}catch(e){}
+  });
+  return t;
+}
+/* 只报「多少篇」，不报笔数。
+   她 2026-10-03 定的：笔数这个数字会让人误解（以为写完再撤销会算两笔），
+   其实撤销是减一条、橡皮是另加一条，口径怎么算都容易被当成「写了多少字」，
+   那干脆不给这个数字，看篇数就够了。 */
+function inkText(o){
+  return o.n?(o.n+' 篇'):'无';
+}
+function confirmWipeAll(){
+  getAllNotes().catch(err=>{
+    console.error(err);
+    toastMsg('数据库打不开，可能被其他标签页占用');
+    throw err;
+  }).then(notes=>{
+    const t=tallyRecs(notes);
+    /* 实时读 localStorage，不要用页面加载时的内存快照 favs/doneList/recent ——
+       那些是打开主页那一刻的旧值，弹窗里报数会跟实际不符。 */
+    const nOf=k=>{try{const v=JSON.parse(localStorage.getItem(k));return Array.isArray(v)?v.length:0}catch(e){return 0}};
+    const favN=nOf(LS_FAV), doneN=nOf(LS_DONE), recentN=nOf(LS_RECENT);
+    const markN=favN+doneN+recentN;
+
+    const rows=[
+      {k:'做题页批注',v:inkText(t.do)},
+      {k:'复盘页批注',v:inkText(t.rv)},
+      {k:'真题页批注',v:inkText(t.note)},
+      {k:'收藏 / 学完 / 最近学习',v:markN?(favN+' / '+doneN+' / '+recentN):'无'},
+      {k:'浏览器缓存与设置',v:'全部'},
+      {k:'总共',v:fmtSize(t.bytes),tot:true}
+    ];
+    return EkzExport.confirm({
+      theme:'red',
+      title:'确定要清空全部数据吗',
+      sub:'5 类东西会一起消失，这一步没法撤销',
+      rows:rows,
+      hint:'小提示：先点【备份 JSON】导一份，清空后还能导回来。',
+      okText:'确认'
+    });
+  }).then(ok=>{
+    if(!ok)return;
+    wipeAllData().then(stat=>{
+      /* 别谎报成功：有库没删掉就如实说，通常是别的标签页开着本站 */
+      if(stat.dbFailed.length){
+        toastMsg('笔记没删干净：'+stat.dbFailed.join('、')+' 被占用，关掉本站其他标签页再试');
+        console.warn('[清空] 库未删除',stat.dbFailed,stat);
+      }else{
+        toastMsg('已清空，正在刷新…');
+      }
+      setTimeout(()=>{location.replace(location.pathname);},1400);
+    }).catch(err=>{console.error(err);toastMsg('清空失败，看控制台');});
+  }).catch(()=>{/* getAllNotes 已toast 过，这里不重复提示 */});
+}
 function putNotes(recs){
+  if(window.ekzDB&&window.ekzDB.putMany)return window.ekzDB.putMany(recs).then(r=>r.ok);
   return openNotesDB().then(db=>new Promise((res,rej)=>{
     const tx=db.transaction('notes','readwrite');
     const st=tx.objectStore('notes');
     recs.forEach(r=>st.put(r));
     tx.oncomplete=()=>res(true);
     tx.onerror=()=>rej(tx.error);
+    tx.onabort=()=>rej(tx.error||new Error('事务被中止'));
   }));
 }
 function toastMsg(t){
@@ -378,8 +786,22 @@ function toastMsg(t){
 /* ---- 笔记备份：导出（弹窗：JSON 备份 / PDF 做题页带批注） ---- */
 function exportJsonAll(){
   return getAllNotes().then(notes=>{
-    if(!notes.length){toastMsg('还没有笔记哦，先去写点东西');return;}
-    const data={app:'ekz-notes-backup',v:1,ts:Date.now(),notes:notes};
+    /* 主页标记也一起打包（她 2026-10-03 要求）。
+       这三个原来不在备份里，换设备后收藏/学完/最近学习会全丢。
+       real 里同时存原始字符串和解析后的数组：解析后的方便直接写回，
+       原始的留着兜底，万一老版本存的格式不对还能人工看。 */
+    const real={};
+    [[LS_FAV,'favs'],[LS_DONE,'done'],[LS_RECENT,'recent']].forEach(([k,name])=>{
+      let raw=null,arr=null;
+      try{raw=localStorage.getItem(k);arr=JSON.parse(raw);}catch(e){}
+      if(!Array.isArray(arr))arr=[];
+      real[name]=arr;
+      real[name+'Raw']=raw;
+    });
+    if(!notes.length&&!real.favs.length&&!real.done.length&&!real.recent.length){
+      toastMsg('还没有笔记哦，先去写点东西');return;
+    }
+    const data={app:'ekz-notes-backup',v:2,ts:Date.now(),notes:notes,marks:real};
     const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
@@ -387,7 +809,8 @@ function exportJsonAll(){
     a.download='英语真题手写笔记备份_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json';
     a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-    toastMsg('已导出 '+notes.length+' 条笔记记录（含批注）');
+    const mN=real.favs.length+real.done.length+real.recent.length;
+    toastMsg('已导出 '+notes.length+' 条笔记记录'+(mN?' + '+mN+' 条主页标记':''));
   }).catch(err=>{console.error(err);toastMsg('导出失败');});
 }
 /* 把一张底稿图 + 该页笔迹合成 canvas（图片走 dataURL，file:// 下不会被污染） */
@@ -511,12 +934,15 @@ document.getElementById('bkExportBtn').addEventListener('click',()=>{
     extra:wrap,
     items:[
       {label:'备份 JSON',sub:'全部批注和笔记打包成一个文件（恢复用）',onClick:()=>exportJsonAll()},
-      {label:'导出 PDF',sub:'做题页文章＋题目，带手写批注',onClick:()=>exportPdfPapers(ySel.value,pSel.value)}
+      {label:'导出 PDF',sub:'做题页文章＋题目，带手写批注',onClick:()=>exportPdfPapers(ySel.value,pSel.value)},
+      {label:'清空所有数据',sub:'做题/复盘/真题批注、主页标记、浏览器缓存全清',
+       danger:true,onClick:()=>confirmWipeAll()}
     ]
   });
 });
 const bkFile=document.createElement('input');
 bkFile.type='file';bkFile.accept='.json,application/json';bkFile.style.display='none';
+bkFile.id='bkFile';
 document.body.appendChild(bkFile);
 document.getElementById('bkImportBtn').addEventListener('click',()=>bkFile.click());
 bkFile.addEventListener('change',e=>{
@@ -524,18 +950,91 @@ bkFile.addEventListener('change',e=>{
   if(!f)return;
   const reader=new FileReader();
   reader.onload=async()=>{
+    /* ---- 先解析、先说明，确认了才真的写进去（她 2026-10-03 要求） ---- */
+    let recs=[],mk=null;
     try{
       const data=JSON.parse(reader.result);
-      let recs=[];
       if(data.app==='ekz-notes-backup'&&Array.isArray(data.notes)){
-        recs=data.notes.filter(r=>r&&r.id&&(Array.isArray(r.pages)||(r.marks&&typeof r.marks==='object')));
+        recs=data.notes.filter(r=>r&&r.id&&(Array.isArray(r.pages)||(r.marks&&typeof r.marks==='object')||Array.isArray(r.strokes)));
+        /* v2 起备份里带 marks（收藏/学完/最近学习）。v1 老备份没有这一段，
+           这里就是空的，弹窗会告诉她"这份备份不含主页标记"。 */
+        if(data.marks&&typeof data.marks==='object')mk=data.marks;
       }else if(data.app==='ekz-notes'&&data.id&&Array.isArray(data.pages)){
         recs=[data]; /* 兼容旧版单本备份 */
       }
-      if(!recs.length)throw new Error('格式不对');
-      await putNotes(recs);
-      toastMsg('导入成功，共 '+recs.length+' 条记录');
-    }catch(err){toastMsg('文件不对，要用本库导出的JSON');}
+      if(!recs.length&&!mk)throw new Error('格式不对');
+    }catch(err){toastMsg('文件不对，要用本库导出的JSON');return;}
+
+    /* 统计这份文件里到底有什么，摆给她看 */
+    const t=tallyRecs(recs);
+    /* 哪些篇目已经有了 → 这些会被覆盖 */
+    const existing=await getAllNotes().catch(()=>[]);
+    const oldIds=new Set(existing.map(r=>r.id));
+    const willCover=recs.filter(r=>oldIds.has(r.id)).length;
+
+    /* 主页标记：备份里有的才算数，老备份（v1）这一项显示"无" */
+    const mkArr=k=>{
+      if(!mk)return [];
+      if(Array.isArray(mk[k]))return mk[k];
+      try{const v=JSON.parse(mk[k+'Raw']);return Array.isArray(v)?v:[];}catch(e){return []}
+    };
+    const fv=mkArr('favs'),dv=mkArr('done'),rv=mkArr('recent');
+    const mkN=fv.length+dv.length+rv.length;
+    /* 三项全空的备份不代表"用户想清空标记"，只代表这台机器当初没标记。
+       这种情况下绝不能拿空数组去覆盖本机，否则换机导入会把收藏/学完全抹掉。
+       hasMarks=有没有真内容，导入时只按它决定写不写。 */
+    const hasMarks=mkN>0;
+    /* 本机已有的标记数 —— 导入是整段覆盖，会把本机这些挤掉。 */
+    const lsLen=k=>{try{const v=JSON.parse(localStorage.getItem(k));return Array.isArray(v)?v.length:0}catch(e){return 0}};
+    const oldFavN=lsLen(LS_FAV), oldDoneN=lsLen(LS_DONE), oldRecN=lsLen(LS_RECENT);
+    const oldMkN=oldFavN+oldDoneN+oldRecN;
+
+    const rows=[
+      {k:'做题页批注',v:inkText(t.do)},
+      {k:'复盘页批注',v:inkText(t.rv)},
+      {k:'真题页批注',v:inkText(t.note)},
+      {k:'收藏 / 学完 / 最近学习',v:mk?(hasMarks?(fv.length+' / '+dv.length+' / '+rv.length):'无（本机保持原样）'):'无'},
+      {k:'会覆盖本机',v:(
+        (willCover?('笔记 '+willCover+' 篇'):'')+
+        ((willCover&&hasMarks&&oldMkN)?' · ':'')+
+        (hasMarks&&oldMkN?('主页标记 '+oldMkN+' 条'):'')
+      )||'不会覆盖'},
+      {k:'总共',v:fmtSize(f.size),tot:true}
+    ];
+    const ok=await EkzExport.confirm({
+      theme:'blue',
+      title:'这份备份里有这些内容',
+      sub:hasMarks?'做题/复盘/真题的批注和主页标记都会一起导入，收藏、学完、最近学习都照文件里的覆盖本机'
+          :(mk?'这份备份里没有任何主页标记，导入后收藏/学完/最近学习保持本机原样'
+            :'这份是旧版备份，只有做题/复盘/真题的批注，没有收藏和学完标记'),
+      rows:rows,
+      hint:!mk?'旧备份不含主页标记，导入后收藏/学完/最近学习保持本机原样。'
+          :!hasMarks?'备份里的标记是空的（多半是导出时那台机器还没用过收藏/学完），本机的不会被清掉。'
+          :(oldMkN?('注意：本机现有 '+oldMkN+' 条主页标记，会被文件里的覆盖。')
+                 :'本机没有主页标记，导入后直接用文件里的。'),
+      okText:'确认导入'
+    });
+    if(!ok)return;
+    try{
+      if(recs.length)await putNotes(recs);
+      /* 主页标记整段覆盖，但只在备份里真有内容时才写 ——
+         空数组覆盖会把本机的收藏/学完/最近学习无声清掉。 */
+      if(hasMarks){
+        const w=(k,arr)=>{try{localStorage.setItem(k,JSON.stringify(arr))}catch(e){}};
+        w(LS_FAV,fv); w(LS_DONE,dv); w(LS_RECENT,rv);
+        /* 内存里的快照也得换，不然这一页上的星号、✓、最近学习
+           还是打开主页那一刻的旧值，导入完看着像没生效。 */
+        favs=fv; doneList=dv; recent=rv;
+        /* 走 syncSearchUI：列表、搜索框、clear 按钮一起对齐。
+           原来只 render()，搜索框还留着旧词，导入完看着像没生效。 */
+        syncSearchUI(); renderRecent();
+      }
+      const parts=[];
+      if(recs.length)parts.push(recs.length+' 条笔记');
+      if(hasMarks)parts.push(mkN+' 条主页标记');
+      else if(mk)parts.push('主页标记保持原样');
+      toastMsg('导入成功：'+(parts.join(' + ')||'没有可写入的内容'));
+    }catch(err){console.error(err);toastMsg('写入失败，看控制台');}
   };
   reader.readAsText(f);
 });

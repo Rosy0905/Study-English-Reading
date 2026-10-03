@@ -8,7 +8,9 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const WebSocket = require(path.join(process.env.NODE_PATH || "C:/Users/伶伶/.workbuddy/binaries/node/workspace", "node_modules", "ws"));
+// NODE_PATH 已经由外部 export 指向 workspace 的 node_modules，
+// 这里再拼一层会变成 .../node_modules/node_modules/ws 而找不到
+const WebSocket = require("ws");
 
 const ROOT = path.resolve(__dirname, "..");
 const EDGE = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
