@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+.layout{display:flex;height:100vh;margin:0}.panel{flex:1;position:relative}.scroll{height:100%;overflow:auto}
+.pageWrap{position:relative;width:400px;height:600px;margin:0 auto;background:#eee}
+.ekz-ink-host{position:absolute;inset:0}
+</style></head><body>
+<div class="layout">
+<div class="panel"><div class="scroll"><div class="pageWrap"><div id="articleWrap" class="ekz-ink-host"></div></div></div></div>
+<div class="panel"><div class="scroll"><div class="pageWrap"><div id="questionWrap" class="ekz-ink-host"></div></div></div></div>
+</div>
+<script src="/assets/ekz-db.js"></script>
+<script src="/assets/ink-paper.js"></script>
+<script src="/assets/mark-engine.js"></script>
+<script>
+function pct(host,p){const r=host.getBoundingClientRect();return [r.left+p[0]*r.width, r.top+p[1]*r.height];}
+window.addEventListener('load', async ()=>{
+  await new Promise(r=>setTimeout(r,50));
+  window.engine = await window.EkzMark.init('test-paper',[
+    {el:document.getElementById('articleWrap'),slot:'article'},
+    {el:document.getElementById('questionWrap'),slot:'question'}
+  ]);
+  window.engine.setEditing(true);
+  window.__ready=true;
+});
+window.__drawOn=function(hostId,kind,pts){
+  const host=document.getElementById(hostId);
+  const cv=host.querySelector('canvas.ekz-ink-cv');
+  if(kind==='pen')engine.setTool('pen');else if(kind==='hl')engine.setTool('hl');else if(kind==='er')engine.setTool('er');
+  const id=99;
+  pts.forEach((p,i)=>{const x=pct(host,p)[0],y=pct(host,p)[1];
+    if(i===0)cv.dispatchEvent(new PointerEvent('pointerdown',{pointerId:id,pointerType:'pen',clientX:x,clientY:y,button:0,pressure:.5,bubbles:true}));
+    else cv.dispatchEvent(new PointerEvent('pointermove',{pointerId:id,pointerType:'pen',clientX:x,clientY:y,pressure:.5,bubbles:true}));
+  });
+  const last=pts[pts.length-1];const x=pct(host,last)[0],y=pct(host,last)[1];
+  cv.dispatchEvent(new PointerEvent('pointerup',{pointerId:id,pointerType:'pen',clientX:x,clientY:y,pressure:.5,bubbles:true}));
+};
+window.__strokesOf=function(slot){const a=engine.rec.marks[slot];return a?a.length:0;};
+window.__ptsLen=function(slot){const a=engine.rec.marks[slot];return a?a.map(s=>s.pts?s.pts.length:0):[];};
+window.__readDB=function(){return new Promise(res=>{const r=indexedDB.open('ekz-notes-v2',2);r.onsuccess=()=>{const db=r.result;try{const tx=db.transaction('notes','readonly');const rq=tx.objectStore('notes').get('test-paper-mark');rq.onsuccess=()=>res(rq.result?rq.result.marks:null);rq.onerror=()=>res(null);}catch(e){res(null);}};r.onerror=()=>res(null);});};
+window.__clearDB=function(){return new Promise(res=>{const r=indexedDB.deleteDatabase('ekz-notes-v2');r.onsuccess=()=>res('cleared');r.onerror=()=>res('err');r.onblocked=()=>res('blocked');});};
+</script>
+</body></html>
