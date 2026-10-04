@@ -39,6 +39,19 @@
   function push(msg, isErr) {
     var t = new Date();
     var ts = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    /* 同一错误在短时间内重复出现只记一次 + 计次。
+       之前一条 ReferenceError 每 350ms 刷一次，50 行面板全是它，
+       真正有用的其他日志全被挤掉了（她截图里就是这样）。 */
+    if (isErr) {
+      var last = lines[lines.length - 1] || '';
+      if (last.indexOf(' ✗ ' + msg + ' ') === 0) {
+        var rep = /×(\d+)/.exec(last);
+        lines[lines.length - 1] = last.replace(/ ×\d+|$/, '') + ' ×' + ((rep ? +rep[1] : 1) + 1);
+        persist();
+        if (visible && panel) render();
+        return;
+      }
+    }
     lines.push('[' + ts + ']' + (isErr ? ' ✗ ' : ' · ') + msg);
     if (lines.length > 50) lines.shift();
     persist();
@@ -63,4 +76,51 @@
 
   if (document.body) ensureUI();
   else document.addEventListener('DOMContentLoaded', ensureUI);
+
+  /* ---- 画布基准自检 ----
+     笔迹存的是 0~1 归一化坐标，显示时乘画布宽高。所以"画布高度是多少"
+     直接决定笔迹落在哪。如果基准是错的高度，笔迹会整片落到画布外 ——
+     数据在、像素在、人看不见（她的原话："是不是其实画进去了而我看不到"）。
+     这里主动量一次并报出来，不用等笔迹丢了才发现。 */
+  function checkCanvas(wrapId) {
+    try {
+      var el = document.getElementById(wrapId);
+      if (!el) return null;
+      var cv = el.querySelector('.ekz-ink-cv');
+      if (!cv) return null;
+      var cssH = Math.round(cv.getBoundingClientRect().height);
+      var bufH = cv.height;
+      var dpr = window.devicePixelRatio || 1;
+      var out = { cssH: cssH, bufH: bufH, dpr: dpr, ink: -1 };
+      /* 量画布上真的有笔迹：数不透明像素 */
+      try {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        var n = 0, maxY = -1;
+        for (var i = 3, p = 0; i < d.length; i += 4, p++) {
+          if (d[i] > 8) { n++; var y = (p - (p % cv.width)) / cv.width; if (y > maxY) maxY = y; }
+        }
+        out.ink = n;
+        out.inkMaxY = maxY;
+      } catch (_) { out.ink = -2; }
+      return out;
+    } catch (e) { return null; }
+  }
+  function fmt(o) {
+    if (!o) return '(无画布)';
+    return '画布显示高 ' + o.cssH + 'px / 内部 ' + o.bufH + 'px（DPR=' + o.dpr + '）墨迹 ' +
+      (o.ink < 0 ? '读不到' : o.ink) + (o.ink > 0 ? '，最下端 y=' + o.inkMaxY : '');
+  }
+  api.canvasCheck = function (label) {
+    var ids = ['articleWrap', 'questionWrap', 'focusPage', 'ekz-rvWrap'];
+    var got = 0;
+    ids.forEach(function (id) {
+      var o = checkCanvas(id);
+      if (o) { got++; api.log((label || '画布') + ' ' + id + '：' + fmt(o)); }
+    });
+    if (!got) api.log((label || '画布') + '：还没找到画布');
+    return got;
+  };
+  /* 页面稳定后自动报一次 */
+  setTimeout(function () { api.canvasCheck('自检'); }, 2600);
+  setTimeout(function () { api.canvasCheck('复检'); }, 6000);
 })();
