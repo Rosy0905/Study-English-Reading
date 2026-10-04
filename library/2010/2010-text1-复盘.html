@@ -129,5 +129,5 @@ function render(){
 }
 next.onclick=()=>{if(idx<DATA.length-1){idx++;render()}};prev.onclick=()=>{if(idx>0){idx--;render()}};reset.onclick=()=>{idx=0;all=false;lastRenderedIdx=-1;render()};toggleAll.onclick=()=>{all=!all;render()};jump.onchange=()=>{if(jump.value!==''){idx=Number(jump.value);all=false;lastRenderedIdx=-1;render()}};
 document.addEventListener('keydown',e=>{if(all)return;if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();next.click()}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();prev.click()}});render();
-</script><script src="../../manifest.js?v=20261004j" defer></script><script src="../../assets/ekz-nav.js?v=20261004j" defer></script><script src="../../assets/ekz-page-nav.js?v=20261004j" defer></script><script src="../../assets/note-fab.js?v=20261004j" data-paper="2010-text1" data-year="2010" data-label="Text 1" defer></script>
+</script><script src="../../manifest.js?v=20261004k" defer></script><script src="../../assets/ekz-nav.js?v=20261004k" defer></script><script src="../../assets/ekz-page-nav.js?v=20261004k" defer></script><script src="../../assets/note-fab.js?v=20261004k" data-paper="2010-text1" data-year="2010" data-label="Text 1" defer></script>
 </body></html>
