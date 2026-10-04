@@ -95,6 +95,13 @@
       }
       c.restore();
     }
+    /* 橡皮不走"存进 strokes 再重放"这条路。
+       【2026-10-04 关键修复】原来橡皮笔画也会 push 进 strokes，重画时
+       destination-out 在最后执行，会把**已经画好的钢笔和荧光笔一起擦掉**。
+       平板上长按很容易误触成橡皮，于是一条看不见的橡皮痕迹潜伏在列表里，
+       之后每次重画（切荧光笔 / 缩放 / 刷新）都把笔迹擦掉一分 ——
+       表现就是"荧光笔一画，钢笔也跟着消失""钢笔刷新后全无"。
+       现在橡皮只改 ctx 上的像素，不进 strokes，重画时不会误伤任何笔画。 */
     function redraw() {
       ctx.clearRect(0, 0, W, H);
       if (state.hidden) return;
@@ -102,7 +109,8 @@
          只跳过那一条，不让它把整张画布的重绘拖崩导致"全部消失/断节"。 */
       for (const s of strokes) if (s.tool === 'hl') { try { stroke(ctx, s); } catch (_) {} }
       for (const s of strokes) if (s.tool === 'pen') { try { stroke(ctx, s); } catch (_) {} }
-      for (const s of strokes) if (s.tool === 'er') { try { stroke(ctx, s); } catch (_) {} }
+      /* er 类型的旧数据（历史遗留）这里**刻意不重放**：
+         橡皮的效果已经烘焙在画布像素里，重放只会二次擦除已有笔迹。 */
     }
     function drawLive() {
       lctx.clearRect(0, 0, W, H);
@@ -489,10 +497,14 @@
         stopHlHold(); hlStraightened = false; hlMoveAnchor = null;
       }
       if (mine.pts.length) {
-        strokes.push(mine);
-        if (!state.hidden) {
-          if (mine.tool !== 'er' && mine.tool !== 'hl') stroke(ctx, mine);
-          else redraw();
+        /* 橡皮不进 strokes：它只作用于当前画布像素，不参与重画与存储。
+           存进去会在重画时擦掉别的笔迹（见 redraw 注释）。 */
+        if (mine.tool !== 'er') {
+          strokes.push(mine);
+          if (!state.hidden) {
+            if (mine.tool === 'hl') redraw();
+            else stroke(ctx, mine);
+          }
         }
         onDirty();
       }
