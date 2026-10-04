@@ -105,12 +105,27 @@
     function redraw() {
       ctx.clearRect(0, 0, W, H);
       if (state.hidden) return;
-      /* 每条单独 try：某条笔迹数据若异常（如坐标 NaN / pts 损坏），
-         只跳过那一条，不让它把整张画布的重绘拖崩导致"全部消失/断节"。 */
-      for (const s of strokes) if (s.tool === 'hl') { try { stroke(ctx, s); } catch (_) {} }
-      for (const s of strokes) if (s.tool === 'pen') { try { stroke(ctx, s); } catch (_) {} }
-      /* er 类型的旧数据（历史遗留）这里**刻意不重放**：
-         橡皮的效果已经烘焙在画布像素里，重放只会二次擦除已有笔迹。 */
+      /* 【2026-10-04 关键】按**原始顺序**逐条重放，每条单独 try。
+         之前分三轮画（荧光笔一轮、钢笔一轮、橡皮一轮）导致橡皮永远排在最后，
+         把已经画好的所有笔迹都擦一遍 —— 她 2017t3 的 32 条橡皮就是这样
+         把题目页 101 条笔迹盖到只剩影子。
+         现在保持原始时序：橡皮夹在哪个位置就还原在哪个位置，
+         它只擦"它之前画的东西"，这才是真实语义。
+         橡皮必须能重放，否则擦除效果存不住 —— 刷新后笔迹会全部复活
+         （她实测"橡皮擦掉后刷新笔迹还在"，就是上一版把橡皮踢出数据层造成的）。 */
+      for (const s of strokes) {
+        try { s.tool === 'er' ? replayErase(s) : stroke(ctx, s); } catch (_) {}
+      }
+    }
+    /* 橡皮重放：与实时擦除走完全相同的绘制路径（逐段 destination-out），
+       保证"刚擦完"和"刷新后重放"的擦痕范围、粗细完全一致。
+       实时擦动用 eraseSegment（直线段），这里也用直线段，不用贝塞尔中点连线，
+       否则长弧线的擦除范围会略有出入，表现为刷新后擦痕变粗或变细。 */
+    function replayErase(s) {
+      const P = s.pts;
+      if (!P || !P.length) return;
+      if (P.length === 1) { eraseDot(P[0], s.size); return; }
+      for (let i = 1; i < P.length; i++) eraseSegment(P[i - 1], P[i], s.size);
     }
     function drawLive() {
       lctx.clearRect(0, 0, W, H);
@@ -287,25 +302,16 @@
 
     /* ---- 长按变橡皮（同笔记页） ---- */
     let holdTimer = null, holdStart = null, holdFired = false;
-    let holdReal = false;   /* 用户主动点了橡皮按钮（不是长按误触） */
     let lastPointerRel = null;
     function fireHold() {
       holdTimer = null;
       if (!holdStart || curId == null) return;
-      /* 【2026-10-04 关键】原来只看时间不看移动距离。
-         HOLD_MOVE_TOL 这个常量定义了却从来没被用过 —— 于是平板上写字时
-         笔尖稍微停顿一下（超过 420ms）就被判成长按，这一笔先变橡皮。
-         她 2017-text3 的数据里攒了 32 条橡皮笔画（文章页 14、题目页 18），
-         题目页那 18 条擦掉的范围覆盖整页 101% 的笔迹 —— 这就是"t3 有问题、
-         t4 没问题"的真实原因（t4 一条橡皮都没有，是她没在 t4 误触）。
-         现在加上移动判定：笔尖没挪动才算长按。 */
+      /* 420ms 长按变橡皮是她要的手感（她明确说过"420 挺好的"），
+         保持原样不动。上一版我加了移动判定、以为是长按误触，
+         后来她澄清那些橡皮是她自己测试时正常擦的 —— 判定逻辑不该动。
+         真正的 bug 在 redraw 的重放顺序，不在这里。 */
       const mine = curs.get(curId);
       if (!mine) return;
-      const last = lastPointerRel || (mine.pts.length ? mine.pts[mine.pts.length - 1] : null);
-      if (last) {
-        const dx = (last.x - holdStart.rx) * W, dy = (last.y - holdStart.ry) * H;
-        if (Math.sqrt(dx * dx + dy * dy) > HOLD_MOVE_TOL) return;   /* 挪过就不是长按 */
-      }
       holdFired = true;
       mine.tool = 'er';
       mine.color = '#000';
@@ -396,13 +402,12 @@
       curs.set(e.pointerId, { tool: state.tool, color: state.tool === 'er' ? '#000' : state.color[state.tool], size: state.size[state.tool], pts: [mine] });
       /* 长按变橡皮 / 拉直这类单笔逻辑只跟主笔走，多指时不互相干扰 */
       if (!cur) { cur = curs.get(e.pointerId); curId = e.pointerId; holdFired = false; lastPointerRel = mine; }
-      holdReal = (state.tool === 'er');
       if (cur.tool === 'er') {
         eraseDot(cur.pts[0], cur.size);
         drawEraserCursor(mine.x * W, mine.y * H, cur.size);
       } else drawLive();
       if (state.tool !== 'er' && e.pointerType !== 'touch') {
-        holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId, rx: mine.x, ry: mine.y };
+        holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
         clearTimeout(holdTimer); holdTimer = setTimeout(fireHold, HOLD_MS);
       }
       if (state.tool === 'hl' || state.tool === 'pen') startHlHold();
@@ -505,23 +510,15 @@
         stopHlHold(); hlStraightened = false; hlMoveAnchor = null;
       }
       if (mine.pts.length) {
-        /* 橡皮不进 strokes：它只作用于当前画布像素，不参与重画与存储。
-           存进去会在重画时擦掉别的笔迹（见 redraw 注释）。 */
-        if (mine.tool !== 'er') {
-          strokes.push(mine);
-          if (!state.hidden) {
-            if (mine.tool === 'hl') redraw();
-            else stroke(ctx, mine);
-          }
-        } else if (holdFired && !holdReal) {
-          /* 【2026-10-04】长按误触橡皮后又移动过 → 这一笔其实是想写字。
-             fireHold 里已经擦掉的那点要补回来，否则"手一抖就丢一笔"。
-             holdReal=true 表示用户是明确点了橡皮按钮，那就不补。 */
-          if (mine.pts.length > 1) {
-            const back = { tool: state.tool === 'hl' ? 'hl' : 'pen', color: state.color[state.tool === 'hl' ? 'hl' : 'pen'], size: state.size[state.tool === 'hl' ? 'hl' : 'pen'], pts: mine.pts.slice() };
-            strokes.push(back);
-            if (!state.hidden) stroke(ctx, back);
-          }
+        /* 【2026-10-04 修正】橡皮**重新入数据层**。
+           上一版我以为"橡皮会擦掉别的笔迹"就把 er 排除在 strokes 之外，
+           结果擦除效果存不住 —— 她实测"橡皮擦掉笔迹后刷新，笔迹又全回来了"。
+           擦除是一段真实的历史，必须和笔迹一起按顺序存下来才能重放。
+           redraw 已改成按原始顺序重放，橡皮只擦它之前画的东西，不会误伤后来的。 */
+        strokes.push(mine);
+        if (!state.hidden) {
+          if (mine.tool === 'er' || mine.tool === 'hl') redraw();
+          else stroke(ctx, mine);
         }
         onDirty();
       }
