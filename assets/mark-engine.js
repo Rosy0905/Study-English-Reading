@@ -123,8 +123,17 @@
       for (var i = arr.length - 1; i >= 0; i--) {
         if (arr[i] && arr[i].tool === 'er') arr.splice(i, 1);
       }
-      if (before !== arr.length && window.__ekzDebug) {
-        window.__ekzDebug.log('已剔除 ' + (before - arr.length) + ' 条旧橡皮残留（会擦掉其他笔迹）');
+      if (before !== arr.length) {
+        /* 【2026-10-04 补】原来只在内存里 splice，没写回数据库。
+           结果：下次 snapshotAll / 任何一次保存都把带橡皮的旧数组原样写回，
+           旧橡皮一次又一次复活 —— 她平板上"怎么改了还犯"就是这个原因。
+           现在剔除后立刻同步落盘（备份）+ 异步写主库，一次性清干净。 */
+        writeBackup(slot, arr);
+        rec.ts = Date.now();
+        saveMark(deepSnap());
+        if (window.__ekzDebug) {
+          window.__ekzDebug.log('已剔除 ' + (before - arr.length) + ' 条旧橡皮残留并写回数据库（' + before + '→' + arr.length + '）');
+        }
       }
       /* 载入诊断：刷新后先看这两行，就知道是"没存进去"还是"没载出来"。
          笔数为 0 而你以为写了 → 保存问题；笔数正常但看不到 → 渲染/挂载问题。 */

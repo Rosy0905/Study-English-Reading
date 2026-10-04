@@ -23,7 +23,7 @@
      阈值从 450ms 放宽到 900ms：原来太短，画下划线时手稍微一抖就判定成"停顿"，
      整条线被替换成一根直线，看起来就是"画不全/部分消失"。
      放宽后只有真的停住不动才会拉直，正常画线不会误触。 */
-  const HL_HOLD_MS = 900, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;
+  const HL_HOLD_MS = 450, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;
 
   function create(opts) {
     let host = opts.host;
@@ -287,24 +287,31 @@
 
     /* ---- 长按变橡皮（同笔记页） ---- */
     let holdTimer = null, holdStart = null, holdFired = false;
+    let holdReal = false;   /* 用户主动点了橡皮按钮（不是长按误触） */
     let lastPointerRel = null;
     function fireHold() {
       holdTimer = null;
       if (!holdStart || curId == null) return;
-      /* 【2026-10-04 修】原来这里 cur = {...} 重新赋值了一个新对象，
-         但 onMove 里判断用的是 curs.get(pointerId) 那个槽位里的 mine，
-         mine.tool 没变成 er，于是只有下面这一下 eraseDot 生效，
-         之后移动时的 eraseSegment 分支永远进不去 —— 表现就是
-         "第一笔擦个坑，后面橡皮失效"。现在改成原地改槽位里的对象，
-         让 mine.tool 真正变成 er。 */
+      /* 【2026-10-04 关键】原来只看时间不看移动距离。
+         HOLD_MOVE_TOL 这个常量定义了却从来没被用过 —— 于是平板上写字时
+         笔尖稍微停顿一下（超过 420ms）就被判成长按，这一笔先变橡皮。
+         她 2017-text3 的数据里攒了 32 条橡皮笔画（文章页 14、题目页 18），
+         题目页那 18 条擦掉的范围覆盖整页 101% 的笔迹 —— 这就是"t3 有问题、
+         t4 没问题"的真实原因（t4 一条橡皮都没有，是她没在 t4 误触）。
+         现在加上移动判定：笔尖没挪动才算长按。 */
       const mine = curs.get(curId);
       if (!mine) return;
+      const last = lastPointerRel || (mine.pts.length ? mine.pts[mine.pts.length - 1] : null);
+      if (last) {
+        const dx = (last.x - holdStart.rx) * W, dy = (last.y - holdStart.ry) * H;
+        if (Math.sqrt(dx * dx + dy * dy) > HOLD_MOVE_TOL) return;   /* 挪过就不是长按 */
+      }
       holdFired = true;
       mine.tool = 'er';
       mine.color = '#000';
       mine.size = state.size.er;
       lctx.clearRect(0, 0, W, H);
-      if (mine.pts.length) { const last = mine.pts[mine.pts.length - 1]; eraseDot(last, mine.size); }
+      if (mine.pts.length) { const lp = mine.pts[mine.pts.length - 1]; eraseDot(lp, mine.size); }
       if (lastPointerRel) drawEraserCursor(lastPointerRel.x * W, lastPointerRel.y * H, mine.size);
       toast('橡皮');
     }
@@ -389,12 +396,13 @@
       curs.set(e.pointerId, { tool: state.tool, color: state.tool === 'er' ? '#000' : state.color[state.tool], size: state.size[state.tool], pts: [mine] });
       /* 长按变橡皮 / 拉直这类单笔逻辑只跟主笔走，多指时不互相干扰 */
       if (!cur) { cur = curs.get(e.pointerId); curId = e.pointerId; holdFired = false; lastPointerRel = mine; }
+      holdReal = (state.tool === 'er');
       if (cur.tool === 'er') {
         eraseDot(cur.pts[0], cur.size);
         drawEraserCursor(mine.x * W, mine.y * H, cur.size);
       } else drawLive();
       if (state.tool !== 'er' && e.pointerType !== 'touch') {
-        holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
+        holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId, rx: mine.x, ry: mine.y };
         clearTimeout(holdTimer); holdTimer = setTimeout(fireHold, HOLD_MS);
       }
       if (state.tool === 'hl' || state.tool === 'pen') startHlHold();
@@ -504,6 +512,15 @@
           if (!state.hidden) {
             if (mine.tool === 'hl') redraw();
             else stroke(ctx, mine);
+          }
+        } else if (holdFired && !holdReal) {
+          /* 【2026-10-04】长按误触橡皮后又移动过 → 这一笔其实是想写字。
+             fireHold 里已经擦掉的那点要补回来，否则"手一抖就丢一笔"。
+             holdReal=true 表示用户是明确点了橡皮按钮，那就不补。 */
+          if (mine.pts.length > 1) {
+            const back = { tool: state.tool === 'hl' ? 'hl' : 'pen', color: state.color[state.tool === 'hl' ? 'hl' : 'pen'], size: state.size[state.tool === 'hl' ? 'hl' : 'pen'], pts: mine.pts.slice() };
+            strokes.push(back);
+            if (!state.hidden) stroke(ctx, back);
           }
         }
         onDirty();
