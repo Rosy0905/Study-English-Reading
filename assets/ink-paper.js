@@ -19,9 +19,11 @@
   const DPR = () => Math.min(window.devicePixelRatio || 1, 3);
   const K = .6, KP = .35;                                    /* 平滑 */
   const HOLD_MS = 420, HOLD_MOVE_TOL = 8;                    /* 长按变橡皮 */
-  /* 拉直：仅钢笔在明显停顿（1s）后自动拉直，避免画到一半被削成直线。
-     荧光笔不再自动拉直——下划线途中稍一停顿就被替换成直线，正是"画不全/部分消失"的元凶。 */
-  const HL_HOLD_MS = 1000, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;
+  /* 拉直：钢笔和荧光笔都保留（她明确两个都要）。
+     阈值从 450ms 放宽到 900ms：原来太短，画下划线时手稍微一抖就判定成"停顿"，
+     整条线被替换成一根直线，看起来就是"画不全/部分消失"。
+     放宽后只有真的停住不动才会拉直，正常画线不会误触。 */
+  const HL_HOLD_MS = 900, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;
 
   function create(opts) {
     let host = opts.host;
@@ -188,8 +190,8 @@
       hlHoldTimer = setInterval(checkHlStraighten, 50);
     }
     function checkHlStraighten() {
-      /* 仅钢笔拉直；荧光笔不参与，避免下划线被削成直线（她反馈"画不全/部分消失"） */
-      if (!cur || cur.tool !== 'pen' || hlStraightened) { stopHlHold(); return; }
+      /* 钢笔和荧光笔都保留拉直（她要求两个都要） */
+      if (!cur || (cur.tool !== 'hl' && cur.tool !== 'pen') || hlStraightened) { stopHlHold(); return; }
       if (performance.now() - lastMoveTs < HL_HOLD_MS) return;
       const P = cur.pts; if (P.length < 2) return;
       const start = P[0], end = hlMoveAnchor || P[P.length - 1];
@@ -312,7 +314,7 @@
         holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
         clearTimeout(holdTimer); holdTimer = setTimeout(fireHold, HOLD_MS);
       }
-      if (state.tool === 'pen') startHlHold();
+      if (state.tool === 'hl' || state.tool === 'pen') startHlHold();
       syncTouchAction();
     };
     cv.addEventListener('pointerdown', onDown);

@@ -113,6 +113,9 @@
         if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔');
       }
       arr.forEach(normStroke);
+      /* 载入诊断：刷新后先看这两行，就知道是"没存进去"还是"没载出来"。
+         笔数为 0 而你以为写了 → 保存问题；笔数正常但看不到 → 渲染/挂载问题。 */
+      if (window.__ekzDebug) window.__ekzDebug.log('载入 ' + slot + '：' + arr.length + ' 笔');
       return arr;
     }
 
@@ -125,24 +128,39 @@
         }
       }
     }
+    /* 每次落盘都传一份**独立的深快照**。
+       【2026-10-04 关键修复】原来所有页共用同一个 rec 对象，saveMark(rec) 传的是引用；
+       IndexedDB 的 put 会在事务里对 rec 做结构化克隆，而文章页和题目页共用一份
+       rec.marks —— 两页几乎同时落笔时，后一次 put 可能克隆到"另一页正在改动"的
+       中间状态，于是题目页的笔被文章页的写入覆盖掉。
+       表现正是她实测的：文章页刷新后还在，题目页的笔全没了，面板却报"保存成功"。
+       深快照让每次写入彼此独立，谁也覆盖不到谁。 */
+    function deepSnap() {
+      var m = {};
+      for (var k in rec.marks) {
+        if (!Object.prototype.hasOwnProperty.call(rec.marks, k)) continue;
+        m[k] = rec.marks[k] ? rec.marks[k].slice() : [];
+      }
+      return { id: rec.id, marks: m, ts: rec.ts };
+    }
     function markDirty(key) {
       const p = papers[key];
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
       rec.ts = Date.now();
       /* 同步备份先落盘（ unload 抢不走 ），再异步写主库。 */
       if (p && p.paper) writeBackup(p.slot, rec.marks[p.slot]);
-      /* 每完成一笔立刻落盘，不再用 300ms 防抖。
-         原因：刷新/切页时旧逻辑靠 beforeunload/pagehide 的异步事务保存，
-         移动端和一部分桌面浏览器会在页面卸载前掐断该事务，笔迹因此丢失
-         （用户实测：电脑与平板刷新后笔迹消失）。改为每笔立即写入 IndexedDB，
-         刷新前一刻数据早已在库里，彻底规避异步落盘被中断的问题。 */
-      saveMark(rec).then(function () {
-        if (window.__ekzDebug) window.__ekzDebug.log('保存成功 slot=' + key + ' 笔数=' + (rec.marks[p.slot] ? rec.marks[p.slot].length : 0));
+      const n = p && p.paper ? rec.marks[p.slot].length : 0;
+      saveMark(deepSnap()).then(function () {
+        if (window.__ekzDebug) window.__ekzDebug.log('保存成功 slot=' + key + ' 笔数=' + n);
       }).catch(function (e) {
         if (window.__ekzDebug) window.__ekzDebug.err('保存失败 slot=' + key + ' : ' + (e && e.message ? e.message : e));
       });
     }
-    function flush() { snapshotAll(); clearTimeout(dirtyTimer); dirtyTimer = null; return saveMark(rec); }
+    function flush() {
+      snapshotAll();
+      clearTimeout(dirtyTimer); dirtyTimer = null;
+      return saveMark(deepSnap());
+    }
     /* 三个出口都挂：移动端 beforeunload 常常不触发 */
     addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', function () {

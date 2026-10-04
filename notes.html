@@ -83,13 +83,13 @@ body{background:#f7f4fb;font-family:'PingFang SC','Microsoft YaHei',sans-serif;c
   </div>
 </div>
 
-<script src="manifest.js?v=20261004f"></script>
-<script src="assets/ekz-db.js?v=20261004f"></script>
-<script src="assets/ink-toolbar.js?v=20261004f"></script>
-<script src="assets/ekz-export.js?v=20261004f"></script>
-<script src="assets/ekz-pdf.js?v=20261004f"></script>
-<script src="assets/ink-paper.js?v=20261004f"></script>
-<script src="assets/ekz-nav.js?v=20261004f"></script>
+<script src="manifest.js?v=20261004g"></script>
+<script src="assets/ekz-db.js?v=20261004g"></script>
+<script src="assets/ink-toolbar.js?v=20261004g"></script>
+<script src="assets/ekz-export.js?v=20261004g"></script>
+<script src="assets/ekz-pdf.js?v=20261004g"></script>
+<script src="assets/ink-paper.js?v=20261004g"></script>
+<script src="assets/ekz-nav.js?v=20261004g"></script>
 <script>
 /* ============================================================
    手写笔记页（单张纸 · 与真题页批注共用同一套引擎和工具栏）
@@ -217,7 +217,7 @@ window.addEventListener('beforeunload',()=>{if(dirty)doSave();});
 /* ---- 启动：加载笔迹 → 工具栏 + 纸张 ---- */
 (async function init(){
   try{
-    if(!window.ekzDB)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='assets/ekz-db.js?v=20261004f';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    if(!window.ekzDB)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='assets/ekz-db.js?v=20261004g';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
     await window.ekzDB.migrate();
   }catch(_){}
 

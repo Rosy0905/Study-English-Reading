@@ -469,7 +469,8 @@
             { el: document.getElementById('articleWrap'), slot: 'article', onPinch: gz.onPinch, onPinchStart: gz.onPinchStart },
             { el: document.getElementById('questionWrap'), slot: 'question', onPinch: gz.onPinch, onPinchStart: gz.onPinchStart }
           ]);
-          if (rvZoom > 1) { zoomEl(document.getElementById('articleWrap'), rvZoom); zoomEl(document.getElementById('questionWrap'), rvZoom); }
+          if (zArt > 1) zoomEl(document.getElementById('articleWrap'), zArt);
+          if (zQue > 1) zoomEl(document.getElementById('questionWrap'), zQue);
           syncZoomBtn();   /* 上次退出时是放大状态进来的，直接把复位按钮亮出来 */
         } else {
           engine = await window.EkzMark.init(PAPER + '-rv', []);
@@ -598,7 +599,23 @@
      注意：做题/复盘页底图是作者模板内嵌 base64（dataURL），同源不污染 canvas，
      带底图导出直接可用；绝不能替换成数据包里的无水印图——做题/复盘必须保留
      作者原版（含贴纸），无水印底稿只用于笔记页 underlay。 */
+  /* 缩放比例改为「每页各存一份」。
+     【2026-10-04 修正】原来所有页共用一个 rvZoom：在文章页放大后 rvZoom 已经 >1，
+     此时再去捏合题目页，起始值就是被文章页抬高的，clamp 到 1 之后再也回不去
+     （她反馈"放大后怎么缩不回来"的直接原因）。现在 article/question 各自独立，
+     互不干扰，复盘沿用 rvZoom。 */
+  var zArt = 1, zQue = 1;
+  var zArt0 = 1, zQue0 = 1;
   var rvZoom = 1, z0 = 1;
+  function zKey(k) { return 'ekz-zoom-' + PAPER + '-' + k; }
+  function zGet(k) {
+    try { return Math.min(3, Math.max(1, parseFloat(localStorage.getItem(zKey(k))) || 1)); }
+    catch (_) { return 1; }
+  }
+  function zSet(k, v) {
+    try { localStorage.setItem(zKey(k), String(v)); } catch (_) {}
+  }
+  zArt = zGet('article'); zQue = zGet('question');
   try { rvZoom = Math.min(3, Math.max(1, parseFloat(localStorage.getItem('ekz-zoom-' + PAPER)) || 1)); } catch (_) {}
   function zoomEl(el, z, cx, cy) {
     if (!el) return;
@@ -625,36 +642,79 @@
     sc.scrollLeft = beforeScroll.l + (newLeft - cx);
     sc.scrollTop = beforeScroll.t + (newTop - cy);
   }
+  /* 做题页专用：文章页/题目页在同一个滚动容器里上下排列、横向重叠，
+     所以按"捏合中心的纵向坐标落在哪一页的区间"来选缩放目标。
+     - 落在某页可见区间内 → 选它（最常见，手指明确在那页上）
+     - 落在两页之间的空隙 → 选离中心最近的那页
+     - 都不在可见区（页面被滚过头）→ 选中心最近的那页
+     这样文章页、题目页手感一致，也不会出现"题目页捏合却在缩文章页"。 */
+  function pickByRow(els, cx, cy) {
+    var best = null, bestD = Infinity, inside = null;
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (cy >= r.top && cy <= r.bottom) { inside = el; break; }
+      var dy = Math.max(r.top - cy, cy - r.bottom, 0);
+      var dx = Math.max(r.left - cx, cx - r.right, 0);
+      var d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = el; }
+    }
+    return inside || best;
+  }
+
   function rvGestures() {
     return {
-      onPinchStart: function () { z0 = rvZoom; if (window.__ekzDebug) window.__ekzDebug.log('捏合开始 z0=' + rvZoom.toFixed(2)); },
+      onPinchStart: function () {
+        z0 = rvZoom; zArt0 = zArt; zQue0 = zQue;
+        if (window.__ekzDebug) window.__ekzDebug.log('捏合开始 文章=' + zArt.toFixed(2) + ' 题目=' + zQue.toFixed(2));
+      },
       onPinch: function (f, cx, cy) {
         try {
-          rvZoom = Math.min(3, Math.max(1, z0 * f));
-          if (window.__ekzDebug) window.__ekzDebug.log('捏合 f=' + f.toFixed(3) + ' → z=' + rvZoom.toFixed(2));
-          /* 只缩放「手指中心命中的那一栏」。
-             之前左右两栏同时缩放、还共用一个手指锚点，双指横跨两栏时两栏互相打架，
-             表现出来就是"照中心缩放却往右上角飘"（做题页）和"手指放大左边、右边在动"（复盘页）。
-             现在按 cx,cy 落在哪个栏的可视区来选目标，只缩那一栏，锚点不再错位。 */
-          var targets = IS_DO
-            ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
-            : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
-          targets = targets.filter(Boolean);
-          var hit = null, best = Infinity;
-          for (var i = 0; i < targets.length; i++) {
-            var el = targets[i];
-            var sc = el.closest('.scroll') || el;
-            var r = sc.getBoundingClientRect();
-            if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
-            var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
-            var d = dx * dx + dy * dy;
-            if (d < best) { best = d; hit = el; }
+          if (window.__ekzDebug) window.__ekzDebug.log('捏合 f=' + f.toFixed(3));
+          /* 选缩放目标。
+             【2026-10-04 重要修正】之前按"命中哪个栏的可视区"选目标是错的：
+             做题页根本不是左右分栏，而是**单栏上下滚动** —— articleWrap 和
+             questionWrap 都塞在同一个 #leftPane 里、上下排列、横向完全重叠。
+             所以旧逻辑里 articleWrap 永远第一个命中，questionWrap 根本选不中，
+             表现出来就是"文章页缩放正常、题目页捏合时乱跑"（她 2017t3 实测）。
+             正确做法：按两页各自的纵向区间判定，捏合中心落在哪一页就缩哪一页。 */
+          var hit = null, isArt = false;
+          if (IS_DO) {
+            hit = pickByRow([
+              document.getElementById('articleWrap'),
+              document.getElementById('questionWrap')
+            ], cx, cy);
+            isArt = (hit && hit.id === 'articleWrap');
+          } else {
+            /* 复盘页确实是左中右并排，按横向命中判定（保持原逻辑） */
+            rvZoom = Math.min(3, Math.max(1, z0 * f));
+            var targets = [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+            targets = targets.filter(Boolean);
+            var best = Infinity;
+            for (var i = 0; i < targets.length; i++) {
+              var el = targets[i];
+              var sc = el.closest('.scroll') || el;
+              var r = sc.getBoundingClientRect();
+              if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
+              var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
+              var d = dx * dx + dy * dy;
+              if (d < best) { best = d; hit = el; }
+            }
+            if (window.__ekzDebug) window.__ekzDebug.log('→ 复盘 z=' + rvZoom.toFixed(2));
+          }
+          /* 做题页：只改被捏中的那一页，另一页保持原比例 */
+          if (IS_DO) {
+            if (isArt) { zArt = Math.min(3, Math.max(1, zArt0 * f)); zSet('article', zArt); }
+            else { zQue = Math.min(3, Math.max(1, zQue0 * f)); zSet('question', zQue); }
+            if (window.__ekzDebug) window.__ekzDebug.log('→ ' + (isArt ? '文章' : '题目') + ' z=' + (isArt ? zArt : zQue).toFixed(2));
           }
           if (hit) {
-            try { zoomEl(hit, rvZoom, cx, cy); }
+            try { zoomEl(hit, isArt ? zArt : (IS_DO ? zQue : rvZoom), cx, cy); }
             catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('zoomEl 异常: ' + e); }
           }
-          try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
+          if (!IS_DO) { try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {} }
           syncZoomBtn();
         } catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('onPinch 异常: ' + e); }
       }
@@ -667,8 +727,9 @@
      所以给一个显式出口：只要缩过就浮出按钮，点一下回到 100%。
      捏合在 rvGestures.onPinch 里同步刷新按钮显示。 */
   var zoomBtn = null;
+  function anyZoomed() { return IS_DO ? (zArt > 1.02 || zQue > 1.02) : (rvZoom > 1.02); }
   function syncZoomBtn() {
-    if (rvZoom > 1.02) {
+    if (anyZoomed()) {
       if (!zoomBtn && document.body) {
         zoomBtn = document.createElement('button');
         zoomBtn.type = 'button';
@@ -687,12 +748,18 @@
     }
   }
   function resetZoom() {
-    rvZoom = 1; z0 = 1;
-    var targets = IS_DO
-      ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
-      : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+    var targets;
+    if (IS_DO) {
+      /* 做题页两页各自复位（比例是分开存的，这里也要分开清） */
+      zArt = 1; zQue = 1; zArt0 = 1; zQue0 = 1;
+      zSet('article', 1); zSet('question', 1);
+      targets = [document.getElementById('articleWrap'), document.getElementById('questionWrap')];
+    } else {
+      rvZoom = 1; z0 = 1;
+      try { localStorage.setItem('ekz-zoom-' + PAPER, '1'); } catch (_) {}
+      targets = [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+    }
     targets.filter(Boolean).forEach(function (el) { try { zoomEl(el, 1); } catch (_) {} });
-    try { localStorage.setItem('ekz-zoom-' + PAPER, '1'); } catch (_) {}
     syncZoomBtn();
     if (window.__ekzDebug) window.__ekzDebug.log('缩放已手动复位到 100%');
   }
