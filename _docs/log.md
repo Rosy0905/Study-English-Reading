@@ -109,3 +109,14 @@
 （44）弹窗主题补全：ex-red / ex-blue 原来只覆盖清单表格和提示条，标题、副标题、卡片边框、取消键、圆牌仍在用默认粉紫，导致蓝卡片里配粉字。已给两个主题各自补齐这五处，整张卡片单色系。两个确认键再降一档：清空 #c0655d→#cd7d75，导入 #3a6ea8→#4a80ba。测试新增 6 条主题色断言（红/蓝各自的标题、副标题、边框色相检查）守住不再跑偏，test-clear-import.js 现 76 项全过。
 
 （45）数据层加固（A 包，一次改完）：根因是所有 IndexedDB 调用都图省事不写 close()、事务只挂 onerror 不挂 onabort，具体修六处。①assets/ekz-db.js 重写为连接复用（缓存单个 IDBDatabase，close()/destroy() 显式释放），新增 get/put/all/count/putMany/destroy；读写事务分开，onabort 一律挂上，避免 Promise 永不 settle；migrate 读完旧库 finally 里 close，否则它会一直挡住 deleteDatabase 导致「清空后笔记复活」。②notes.html 与 mark-engine.js 的 fallback 版本号从 1 改成 2（与ekz-db.js 一致，否则 ekz-db.js 加载失败时 open(...,1) 对 v2 库抛 VersionError，整页笔记静默失效），并优先走 ekzDB。③notes.html 保存竞态：加 saving 锁 + 记 snapLen，await 之后只把 dirty 清回「仍然脏」而不是直接 false；保存出口从只有 beforeunload 扩到 pagehide + visibilitychange + beforeunload 三条（移动端 beforeunload 常不触发）。④清空全部数据：所有读操作排在计数之后统一 close 再删库，deleteDatabase 的 onblocked 不再当成功，改为记入 stat.dbFailed 并在 toast 里如实提示「关掉本站其他标签页再试」。⑤清空清单补 ekz-split-ratio / ekz-rv-split-ratio 两个真实在用的分栏键，删掉四个从不被写入的幽灵前缀（ekz-shot- / ekz-touch- / ekz-undo- / ekz-redo-）；ekz.pos. 是 sessionStorage 键，从 localStorage 清单里移除（sessionStorage 分支本就全清 ekz 开头）。⑥导入：备份里三项标记全空时不再用空数组覆盖本机（这是换机导入抹掉收藏/学完的元凶），弹窗显示「无（本机保持原样）」，toast 也明说「主页标记保持原样」。⑦最近学习存与显示统一为 8 条。
+
+### 26/10/04
+
+（46）2017t3 题目页淡粉色鬼影定位并清除。鬼影真身是**86 笔 `#fecaca` 荧光笔残留在数据里**，不是渲染故障。三条证据链：截图粉红斜杠实测 `rgb(254,238,239)`，而 `#fecaca` 叠 32% 透明度到白底正是 `rgb(254,238,239)`，一位不差；题目页 197 笔的时序显示橡皮（8 笔）全在末尾，开头 86 笔没有任何橡皮记录——当时屏上擦干净了但擦除动作没存进数据；橡皮能力隔离实测能擦掉 95.8% 的荧光笔像素，功能本身完好。清理后题目页 197 → 111 笔（钢笔 99 / 橡皮 8 / 黄荧光 4 全保留），文章页 78 笔未动。
+
+（47）修复「清空所有数据」被占用时静默失败。`ekzDB.destroy()` 遇到别的标签页占着连接时是 `resolve(false)` 而非 reject，而 `wipeAllData` 的 `del()` 把这个返回值整个丢弃，于是既不计成功也不计失败，双标签页实测读到了 189 笔却一个库都没删掉、失败列表还是空的。现在 `del()` 接住布尔值，false 记入 `stat.dbFailed`，toast 如实提示「被占用，关掉本站其他标签页再试」。
+
+（48）修复「清空后主页统计还是 3 篇做题页有数据」。根因是 `mark-engine.js` 的 `flush()` 挂在 `pagehide` / `beforeunload` / `visibilitychange` 三个出口上，每次都把**页面内存里的笔迹**原样写回 IndexedDB。清空删的是库，而还开着的做题页标签页内存里抱着清空前的笔迹，一切走或一关闭就把旧笔迹写回去。实测复现：清空后立刻 0 条，题目页标签页 flush 一次又变回 1 条。修法是清空时给每条被删记录在 localStorage 留一个清空代号（`ekz-wiped-<recId>`，值为清空时刻），做题页落盘前比对内存笔迹的写入时刻，早于代号就判定为旧货、拒绝回写并就地清掉内存与备份。比对基准用 localStorage 里 `ekz-ink-bkts-` 的备份时刻而不是 `rec.ts`——后者会被每次落笔刷新，导致代号自我解除、旧笔照旧复活。代号故意不列入清空前缀，它必须在清空后继续活着才有用；清空之后新写的笔时刻晚于代号，不受影响（已加反向验证）。
+
+（49）测试工具链加固。新增这轮排查用的专项脚本一批（鬼影取证与最终回归、橡皮隔离、导出链路对账、双标签页连接失效、清空复活双向验证、画布上下文审计、题目页坐标基准、只删指定颜色荧光笔的清理脚本），并把一个基于已推翻结论的旧脚本归档。回归全部通过：鬼影最终 11 项、清空与导入 78 项、导入诊断 16 项、清空复活 6 项（含反向验证）、撤销重做全过、上线前总闸门通过。版本号 20261004p。
+
