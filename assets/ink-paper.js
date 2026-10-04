@@ -166,15 +166,33 @@
     let trustedSize = null;
     function hostRealHeight() {
       /* host 的 scrollHeight 是内容撑出来的高度，比 clientHeight 更能代表
-         "画布应该有多大"。CSS 限高时两者会不同，此时以 scrollHeight 为准。 */
-      return Math.max(host.scrollHeight || 0, host.offsetHeight || 0);
+         "画布应该多大"。CSS 限高时两者会不同，此时以 scrollHeight 为准。
+         【2026-10-04 关键修复】必须**排除两张画布自身**。
+         原来直接读 scrollHeight，而画布就挂在 host 里、且 CSS 高度按 H 设 ——
+         于是 H 越大 → scrollHeight 越大 → H 被自己抬得更大，形成自反馈环：
+           捏合放大 → H 抬到 2104 → 画布 2104px → scrollHeight 2104 → 永远缩不回来。
+         那条"只增不减"的棘轮把这个环锁死了，表现就是：
+         放大看过一次再复位，画布永久比容器高 3 倍，下半截笔迹滚都滚不到，
+         橡皮也被压扁（她的"擦不干净、放大才看到鬼影"）。
+         现在只按**正文内容**算高度，画布不算自己的高度依据。 */
+      let real = 0;
+      const kids = host.children;
+      for (let i = 0; i < kids.length; i++) {
+        const el = kids[i];
+        if (el === cv || el === lv) continue;      /* 画布自己，排除 */
+        const cs = getComputedStyle(el);
+        if (cs.position === 'absolute' || cs.position === 'fixed') continue;  /* 定位元素不撑高 */
+        real = Math.max(real, el.offsetHeight || 0);
+      }
+      /* 没有普通流子元素时退回 host 自己的度量（此时画布也没参与） */
+      if (!real) real = Math.max(host.scrollHeight || 0, host.offsetHeight || 0);
+      return real;
     }
     /* 坐标基准高度。归一化坐标乘的就是它，所以它必须**稳定**：
        容器高度会随内容加载忽大忽小（图片后加载、步骤切换、页面重建），
        一旦基准跟着变，所有已存在的笔迹就会被重新解释成不同位置 ——
        表现就是"刷新后笔迹整体挪了地方、部分看着消失了"。
        所以只增不减：内容长高就抬高基准，绝不缩回去。 */
-    let basisH = 0;
     /* W/H 是归一化坐标的乘数，**绝对不能是 0** —— 一旦为 0，
        所有笔迹会塌到同一个像素点上，表现就是"画了立刻消失"。
        任何分支都必须先落一个可用值，再谈优化。 */
@@ -206,11 +224,16 @@
       /* 高度用内容实际撑开的高度（不用 clientHeight）：题目页加载初期常还没撑到
          最终高度，按 clientHeight 建画布会让归一化坐标基准偏小，
          笔迹整片落到画布外 —— "看着写进去了却找不到"。
-         只增不减：内容长高就抬高基准，已有笔迹位置永不漂移。
-         实在量不到内容高度才退回容器高，再不行给 1px（不塌没）。 */
-      const cand = Math.max(real, h, 0);
-      if (cand > 0) basisH = Math.max(basisH, cand);
-      H = basisH > 0 ? basisH : 1;
+         【2026-10-04 修正】原来这条是"只增不减"的高水位，任何抬升都永久留下，
+         包括捏合放大带来的临时抬升。放大看过一次再复位 100%，基准就永久停在
+         放大时的值 —— 实测画布 2104px 而容器只有 701px，下半截笔迹滚都滚不到，
+         画布还被浏览器纵向压扁（这才是"擦不干净、放大才看到鬼影"的真凶）。
+         现在 real 已排除画布自身（见 hostRealHeight），是稳定的正文高度，
+         所以**它本身就是不漂的基准**，不再需要额外棘轮。
+         内容真长高时 real 自己会变大，笔迹跟着重算、位置不漂 ——
+         这正是原来棘轮要保住的性质，现在由 real 自身保证。 */
+      const base = Math.max(real, h, 0);
+      H = base > 0 ? base : 1;
       if (W <= 0) W = 1;
       trustedSize = { w: W, h: H };
       /* 【2026-10-04 加】超大页面 + 高 DPR + 深度缩放时，画布 backing store
@@ -230,6 +253,28 @@
         if (pair[0].width !== bw) pair[0].width = bw;
         if (pair[0].height !== bh) pair[0].height = bh;
         pair[1].setTransform(dd, 0, 0, dd, 0, 0);
+      }
+      /* 【2026-10-04 关键修复】画布的 CSS 尺寸必须跟着 H 一起设。
+         原来 cv/lv 的 CSS 写死 height:100%，而 backing store 按 H*dd 设。
+         两者只要不等，浏览器就会把整张画布**纵向压扁**贴进容器里 ——
+         笔迹位置全被缩放错，橡皮（destination-out 圆形）也跟着被压扁，
+         擦过的地方看着像没擦掉。这就是她说的"擦不干净、
+         放大才看到一堆笔迹痕迹"的真凶。
+         复现证据（scripts/cdp-zoom-roundtrip-test.js）：
+           捏合放大 → 复位 100% 之后，cssH=701 而 bufH=4208，
+           backing store 是显示高度的 6 倍。
+         为什么平时撞不上：原 basisH 是不减的高水位，只有**放大过再复位**
+         才会拉大它 —— 正好对应她"通过缩放才看到"的现象。
+         现在 CSS 高度按 H 显式给，两边恒等，压扁不可能再发生。
+         溢出交给容器原有滚动条处理，不影响落笔。 */
+      for (const c of [cv, lv]) {
+        const cssH = H + 'px', cssW = W + 'px';
+        if (c.style.height !== cssH) c.style.height = cssH;
+        /* 宽度同理：CSS 写死 width:100%，而 backing store 按 W*dd。
+           捏合放大改的是外层容器的 style.width，画布跟着被拉宽，
+           但画布自己的 CSS 宽仍是容器的 100%，两者一旦不等就横向压扁。
+           一起按 W 设死，两边恒等。 */
+        if (c.style.width !== cssW) c.style.width = cssW;
       }
       if (changed) redraw();
       drawLive();
@@ -272,7 +317,6 @@
       newHost.appendChild(cv); newHost.appendChild(lv);
       host = newHost;
       resize.tries = 0;
-      basisH = 0;   /* 换纸张 = 换内容，坐标基准要重新量 */
       W = 0; H = 0;  /* 顺便作废旧基准，强制重绘 */
       if (ro) { ro.disconnect(); ro.observe(host); }
       resize();

@@ -472,6 +472,10 @@
           if (zArt > 1) zoomEl(document.getElementById('articleWrap'), zArt);
           if (zQue > 1) zoomEl(document.getElementById('questionWrap'), zQue);
           syncZoomBtn();   /* 上次退出时是放大状态进来的，直接把复位按钮亮出来 */
+          /* 【2026-10-04 补】做题页原来不挂这个全局，只有复盘页挂 ——
+             于是脚本和自检面板在做题页永远读不到真实笔数，只能去猜像素。
+             两条分支统一挂上，行为一致。 */
+          window.__ekzEngine = engine;
         } else {
           engine = await window.EkzMark.init(PAPER + '-rv', []);
           setupRvFollow();

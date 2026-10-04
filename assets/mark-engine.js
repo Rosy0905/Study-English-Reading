@@ -70,8 +70,9 @@
   async function init(paperId, slots, opts) {
     opts = opts || {};
     const recId = paperId + '-mark';
-    const rec = (await loadMark(recId)) || { id: recId, marks: {}, ts: 0 };
+    const rec = (await loadMark(recId)) || { id: recId, marks: {}, ts: 0, tss: {} };
     rec.marks = rec.marks || {};
+    rec.tss = rec.tss || {};
 
     /* 共享状态（和 ink-toolbar 的 st 同构，两边偏好互通） */
     const state = { tool: 'pen', color: { pen: '#dc2626', hl: '#fde047' }, size: { pen: 2.5, hl: 16, er: 28 }, finger: false, hidden: false };
@@ -91,8 +92,21 @@
        比备份少（说明主库那笔丢了），用备份补回来。笔迹是归一化坐标，
        一页几十 KB，远在 localStorage 容量内。 */
     const BK = 'ekz-ink-bk-' + recId + '-';
+    /* 备份的写入时刻。**这是判断"谁更新"的唯一依据。**
+       【2026-10-04 关键修复】原来 loadSlot 用"笔数更多"当新鲜度判据
+       （bk.length > arr.length 就采用备份），这是个方向性错误：
+       笔迹可以合法变少 —— 撤销、导入一份更小的备份、换机器。
+       一旦合法变少，旧备份就会被当成"更新的数据"把新数据整个盖掉。
+       实测（scripts/cdp-import-ghost-diag.js）：清空后导入"只有爱心"的 2 笔备份，
+       IDB 里正确写成了 2 笔，但题目页显示 5 笔 —— 旧备份（5 笔）盖掉了导入结果，
+       她反馈的"导入不覆盖、荧光笔复活"就是这条。
+       现在改比时间戳：新备份比主库新才恢复，主库更新就以主库为准。 */
+    const BKTS = 'ekz-ink-bkts-' + recId + '-';
     function writeBackup(slot, arr) {
-      try { localStorage.setItem(BK + slot, JSON.stringify(arr)); }
+      try {
+        localStorage.setItem(BK + slot, JSON.stringify(arr));
+        localStorage.setItem(BKTS + slot, String(Date.now()));
+      }
       catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('备份写不下(容量): ' + (e && e.name)); }
     }
     function readBackup(slot) {
@@ -103,14 +117,33 @@
         return Array.isArray(a) ? a : null;
       } catch (_) { return null; }
     }
+    function backupTs(slot) {
+      var t = parseInt(localStorage.getItem(BKTS + slot) || '0', 10);
+      return isFinite(t) ? t : 0;
+    }
     function loadSlot(slot) {
       var arr = rec.marks[slot] || (rec.marks[slot] = []);
       var bk = readBackup(slot);
-      /* 主库比备份少 → 说明有笔在平板上没存进 IndexedDB，用备份兜回来 */
-      if (bk && bk.length > arr.length) {
+      /* 只有"备份比主库新"才恢复。
+         旧备份（没有时间戳的，视为 0）不会覆盖已有主库数据 ——
+         这样导入一份更小的备份能真正生效，清空后也不会被残留备份反扑。
+         平板上"IndexedDB 那笔丢了"的场景仍然兜得住：那种情况下
+         落笔时 writeBackup 先同步写盘（时间戳最新），主库那笔没提交，
+         下次载入时间戳比主库新 → 仍然用备份恢复。 */
+      var bts = backupTs(slot);
+      /* 主库时间戳必须**按槽位**比。rec.ts 是整条记录共用的，
+         而 rec.marks 同时装着 article / question / rv-left-* 三个槽位，
+         它们在同一个页面里共存、共用一份 rec —— 文章页落一笔会把
+         rec.ts 推到全局最新，题目页那笔旧备份就永远比不过它，
+         平板上"IndexedDB 那笔丢了"的兜底会对题目页失效。
+         所以维护一张 tss：槽位 -> 该槽位最后落盘时刻。
+         老数据没有 tss，退回用 rec.ts（等价于原来的行为，不会更差）。 */
+      var tss = rec.tss || (rec.tss = {});
+      var mainTs = (typeof tss[slot] === 'number') ? tss[slot] : (rec.ts || 0);
+      if (bk && bk.length && bts > mainTs) {
         arr.length = 0;
         bk.forEach(function (s) { arr.push(s); });
-        if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔');
+        if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔（备份较新）');
       }
       arr.forEach(normStroke);
       /* 【2026-10-04 撤回】这里原本会剔掉 tool==='er' 的笔迹，**是错的，已撤销**。
@@ -127,13 +160,18 @@
     }
 
     function snapshotAll() {
+      const now = Date.now();
       for (const k in papers) {
         const p = papers[k];
         if (p.paper) {
           rec.marks[p.slot] = p.paper.strokes.slice();
           writeBackup(p.slot, rec.marks[p.slot]);
+          /* 同步记时刻。不记的话 writeBackup 里的 Date.now() 会让备份
+             比主库新，下一载入就白恢复一次自己刚写的同一份数据。 */
+          rec.tss[p.slot] = now;
         }
       }
+      rec.ts = now;
     }
     /* 每次落盘都传一份**独立的深快照**。
        【2026-10-04 关键修复】原来所有页共用同一个 rec 对象，saveMark(rec) 传的是引用；
@@ -148,12 +186,19 @@
         if (!Object.prototype.hasOwnProperty.call(rec.marks, k)) continue;
         m[k] = rec.marks[k] ? rec.marks[k].slice() : [];
       }
-      return { id: rec.id, marks: m, ts: rec.ts };
+      return { id: rec.id, marks: m, ts: rec.ts, tss: (function () {
+        var o = {};
+        for (var k in rec.tss) if (Object.prototype.hasOwnProperty.call(rec.tss, k)) o[k] = rec.tss[k];
+        return o;
+      }()) };
     }
     function markDirty(key) {
       const p = papers[key];
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
-      rec.ts = Date.now();
+      const now = Date.now();
+      rec.ts = now;
+      /* 按槽位记时刻，loadSlot 才不会因为别的槽位刚落过笔就误判"主库更新" */
+      rec.tss[p ? p.slot : key] = now;
       /* 同步备份先落盘（ unload 抢不走 ），再异步写主库。 */
       if (p && p.paper) writeBackup(p.slot, rec.marks[p.slot]);
       const n = p && p.paper ? rec.marks[p.slot].length : 0;
@@ -293,6 +338,24 @@
       const p = (key && papers[key]) ? papers[key] : activeEntry();
       return p ? p.slot : null;
     }
+    /* 【2026-10-04 补】只读诊断出口。
+       paper 对象整个关在闭包里，页面外（做题页、脚本、平板自检面板）
+       拿不到 strokes —— 之前判断"备份有没有反扑"只能去数像素，
+       而像素量在相邻笔重叠时区分不开（实测 5 笔和 2 笔都是 18603 px，
+       差点据此得出错误结论）。这里直接把真实笔数和工具分布暴露出来。
+       只读，不提供任何写入途径。 */
+    function inkStats(key) {
+      const p = (key && papers[key]) ? papers[key] : activeEntry();
+      if (!p || !p.paper) return { slot: p ? p.slot : null, strokes: 0, tools: {} };
+      var tools = {};
+      p.paper.strokes.forEach(function (s) { tools[s.tool] = (tools[s.tool] || 0) + 1; });
+      return { slot: p.slot, strokes: p.paper.strokes.length, tools: tools };
+    }
+    function inkStatsBySlot() {
+      var out = {};
+      for (const k in papers) if (papers[k].paper) out[papers[k].slot] = inkStats(k);
+      return out;
+    }
 
     slots.forEach(function (cfg) {
       if (cfg.el) mountPaper(cfg.slot, cfg.slot, cfg.el, cfg.readonly, cfg);
@@ -300,7 +363,7 @@
 
     return { setEditing, setTool, setSize, setFinger, setInkHidden,
              undo, redo, clearActive, mountPaper, setSlot, currentSlot,
-             exportSlot, flush, hasInk, rec };
+             exportSlot, flush, hasInk, rec, inkStats, inkStatsBySlot };
   }
 
   window.EkzMark = { init };

@@ -203,10 +203,10 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js?v=20261004m"></script>
-<script src="assets/ekz-export.js?v=20261004m"></script>
-<script src="assets/ekz-pdf.js?v=20261004m"></script>
-<script src="manifest.js?v=20261004m"></script>
+<script src="assets/ekz-db.js?v=20261004n"></script>
+<script src="assets/ekz-export.js?v=20261004n"></script>
+<script src="assets/ekz-pdf.js?v=20261004n"></script>
+<script src="manifest.js?v=20261004n"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
@@ -632,7 +632,18 @@ function closeNotesDB(){
 const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
   'ekz-split-ratio','ekz-rv-split-ratio',
   'drawn.prefs.v1','drawn.paletteOrder.v1','drawn.customColors.v2'];
-const CLEAR_LS_PREFIX=['ekz-zoom-'];
+/* 【2026-10-04 补】ekz-ink-bk- / ekz-ink-bkts- 是 mark-engine 落笔时同步写的
+   localStorage 备份和它的写入时刻（为了平板刷新不丢笔迹）。
+   原来前缀表里只有 ekz-zoom-，这两份**一个都没清**。
+   后果实测（scripts/cdp-import-ghost-diag.js）：
+     清空数据只删了 IndexedDB，同步备份原封不动留着；
+     紧接着导入"只有爱心"的旧备份 → IDB 里正确写成 2 笔，
+     但 mark-engine 的 loadSlot 看到"备份 5 笔 > 主库 2 笔"就判定备份更新，
+     拿旧备份把导入结果整个盖掉 → 荧光笔全复活。
+   这条链只在"导入的笔迹比旧备份少"时才犯，所以平时撞不上，一清空就必现。
+   注意两个前缀要都列：ekz-ink-bk- 带结尾横线，而 ekz-ink-bkts- 的 bk 后面是 t，
+   只写 ekz-ink-bk- 匹配不到时间戳那一半。 */
+const CLEAR_LS_PREFIX=['ekz-zoom-','ekz-ink-bk-','ekz-ink-bkts-'];
 function wipeAllData(){
   const stat={notes:0,marks:0,ls:0,ss:0,db:0,cache:0,dbFailed:[]};
   return getAllNotes().catch(()=>[])
@@ -1016,7 +1027,31 @@ bkFile.addEventListener('change',e=>{
     });
     if(!ok)return;
     try{
-      if(recs.length)await putNotes(recs);
+      if(recs.length){
+        await putNotes(recs);
+        /* 【2026-10-04 关键】导入成功后，必须把这次导入覆盖掉的篇目
+           在 mark-engine 里的 localStorage 同步备份一起作废。
+           不作废的话她反馈的"导入不覆盖、荧光笔复活"照样犯，原因是时间戳：
+             putNotes 是整条 put 覆盖写，备份里的 ts 是**导出那一刻**的时间，
+             属于过去；而本机同步备份的写入时刻是**本机最后一次落笔**，
+             一定更晚。loadSlot 比"备份较新"就会拿这份旧备份反扑，
+             把刚导入的数据整个盖掉 —— 即使笔数比对了也照样错
+             （时间戳比笔数更权威）。
+           所以：清空数据删备份只解决了"清完再导"，正常覆盖导入时的这条
+           漏网路径在这儿补掉。逐条按记录 id 清，别的篇目备份不动。 */
+        let clearedBk=0;
+        try{
+          recs.forEach(r=>{
+            if(!r||!r.id)return;
+            Object.keys(localStorage).forEach(k=>{
+              if(k.indexOf('ekz-ink-bk-'+r.id+'-')===0||k.indexOf('ekz-ink-bkts-'+r.id+'-')===0){
+                localStorage.removeItem(k);clearedBk++;
+              }
+            });
+          });
+        }catch(e){}
+        if(clearedBk&&window.__ekzDebug)window.__ekzDebug.log('导入作废旧同步备份 '+clearedBk+' 项');
+      }
       /* 主页标记整段覆盖，但只在备份里真有内容时才写 ——
          空数组覆盖会把本机的收藏/学完/最近学习无声清掉。 */
       if(hasMarks){

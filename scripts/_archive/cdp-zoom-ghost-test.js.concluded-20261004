@@ -1,0 +1,163 @@
+/* cdp-zoom-ghost-test.js
+ * 小0主人 2026-10-04 17:08 反馈：缩放才看得到很多擦不干净的笔迹（2017t3）。
+ * 她的自检日志给了硬事实：
+ *   [17:08:43] 拟合 articleWrap: 画布显示高 776px / 内部 1454px  画下 y=1220
+ *   画布可见 776px，笔迹却画在 y=1220 → 笔迹落在可见框之外。
+ *
+ * 本脚本量三件事，全部只读不改代码：
+ *   A. 墨迹在画布里的真实纵向范围 vs 画布 CSS 可见高度
+ *      （底边超过可见高 → 这就是 100% 看不见、放大才出现的原因）
+ *   B. 捏合放大再复位 100% 之后，渲染基准 basisH(=bufH/DPR) 会不会被"棘轮"抬高
+ *   C. 在 100% 下画一笔，看它落在 y 多少，与"笔尖实际在哪"比，看错位百分比
+ */
+const { spawn } = require('child_process');
+const path = require('path');
+const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/154.0.4258.53/msedge.exe';
+const BASE = 'http://localhost:8123';
+const T3 = BASE + '/library/2017/2017-text3-%E5%81%9A%E9%A2%98.html';
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function withTimeout(p, ms, t) { return Promise.race([p, sleep(ms).then(() => { throw new Error('超时 ' + t); })]); }
+let pass = 0, fail = 0;
+function ok(c, m) { if (c) { pass++; console.log('  OK   ' + m); } else { fail++; console.log('  坏  ' + m); } }
+
+(async () => {
+  const port = 9247;
+  const proc = spawn(EDGE, ['--headless=new', '--disable-gpu', '--remote-debugging-port=' + port,
+    '--user-data-dir=' + path.join(process.env.TEMP, 'cdp-zg-' + Date.now()), 'about:blank'], { stdio: 'ignore' });
+  let ws, id = 0; const pend = new Map(); const evts = [];
+  for (let i = 0; i < 60; i++) {
+    try {
+      const j = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+      ws = new WebSocket(j.webSocketDebuggerUrl);
+      await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; }); break;
+    } catch (_) { await sleep(300); }
+  }
+  if (!ws) { console.log('连不上'); proc.kill(); return; }
+  const send = (m, p, s) => new Promise(res => { const mid = ++id; pend.set(mid, res); ws.send(JSON.stringify({ id: mid, method: m, params: p || {}, sessionId: s })); });
+  ws.onmessage = e => { const m = JSON.parse(e.data);
+    if (m.method === 'Runtime.exceptionThrown') evts.push(JSON.stringify((m.params.exceptionDetails || {}).exception || {}).slice(0, 260));
+    if (m.id && pend.has(m.id)) { const r = pend.get(m.id); pend.delete(m.id); r(m.result); } };
+  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+  const S = (m, p) => send(m, p, sessionId);
+  const ev = async expr => {
+    const r = await withTimeout(S('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }), 25000, 'eval');
+    if (r && r.exceptionDetails) throw new Error('JS: ' + JSON.stringify(r.exceptionDetails).slice(0, 300));
+    return r.result.value;
+  };
+  await S('Page.enable'); await S('Runtime.enable');
+  /* 用她平板上的真实 DPR（日志里 1.8742763996124268）*/
+  await S('Emulation.setDeviceMetricsOverride', { width: 1080, height: 700, deviceScaleFactor: 1.8742763996124268, mobile: true });
+  await withTimeout(S('Page.navigate', { url: T3 }), 20000, 'nav');
+  await sleep(7000);
+
+  const SEL = `'#questionWrap .ekz-ink-cv'`;
+
+  /* 量几何 + 墨迹真实纵向范围（同时扫 cv 和 lv 两层） */
+  const GEO = `(function(){
+    var cv=document.querySelector(${SEL});
+    if(!cv) return JSON.stringify({err:'no-cv'});
+    var host=cv.parentElement;
+    var r=cv.getBoundingClientRect();
+    var dpr=Math.min(window.devicePixelRatio||1,3);
+    var top=-1, bot=-1, total=0;
+    [[cv,'cv'],[document.querySelector('#questionWrap .ekz-ink-lv'),'lv']].forEach(function(pair){
+      var c=pair[0]; if(!c) return;
+      var w=c.width,h=c.height; if(!w||!h) return;
+      var d=c.getContext('2d').getImageData(0,0,w,h).data;
+      for(var y=0;y<h;y++){
+        var rowHas=false;
+        for(var x=0;x<w;x++){ if(d[(y*w+x)*4+3]>8){ rowHas=true; total++; break; } }
+        if(rowHas){ if(top<0) top=y; bot=y; }
+      }
+    });
+    return JSON.stringify({
+      cssH: Math.round(r.height*10)/10,
+      bufH: cv.height, dpr: Math.round(dpr*1000)/1000,
+      basisH: Math.round((cv.height/dpr)*10)/10,
+      hostClientH: host.clientHeight, hostScrollH: host.scrollHeight,
+      inkTopDev: top, inkBotDev: bot,
+      inkTopCSS: top<0?-1:Math.round((top/dpr)*10)/10,
+      inkBotCSS: bot<0?-1:Math.round((bot/dpr)*10)/10,
+      total: total
+    });
+  })()`;
+
+  console.log('=== A. 墨迹纵向范围 vs 画布可见高度 ===');
+  let g = JSON.parse(await ev(GEO));
+  console.log('  ' + JSON.stringify(g));
+  ok(g.total > 0, '题目页有墨迹（' + g.total + ' 像素行）');
+  /* 关键：墨迹底边（CSS px）超过画布可见高度 → 100% 看不到 */
+  ok(g.inkBotCSS <= g.cssH + 4,
+    '墨迹全在可见框内（墨迹底 ' + g.inkBotCSS + ' ≤ 可见高 ' + g.cssH + '）—— 超出就是"放大才看到"');
+  console.log('  → 超出量 ' + Math.round((g.inkBotCSS - g.cssH)) + 'px（负数=没超出）');
+
+  console.log('\n=== B. 捏合放大再复位：渲染基准会不会被棘轮抬高 ===');
+  const b0 = g.basisH, c0 = g.cssH;
+  await ev(`(function(){ var w=document.getElementById('questionWrap');
+    w.style.width='min(calc(100% * 1.9), calc(820px * 1.9))'; return 1;})()`);
+  await sleep(2000);
+  const gz = JSON.parse(await ev(GEO));
+  console.log('  放大 1.9x: ' + JSON.stringify(gz));
+  await ev(`(function(){ document.getElementById('questionWrap').style.width=''; return 1;})()`);
+  await sleep(2000);
+  const gr = JSON.parse(await ev(GEO));
+  console.log('  复位 100%: ' + JSON.stringify(gr));
+  console.log('  basisH: ' + b0 + ' → 放大时 ' + gz.basisH + ' → 复位后 ' + gr.basisH);
+  ok(Math.abs(gr.basisH - b0) < 3,
+    '复位后 basisH 回到原值（' + b0 + ' → ' + gr.basisH + '）—— 抬高且不回落就是"越缩越偏"');
+  ok(Math.abs(gr.cssH - c0) < 6, '复位后可见高度也回到原值（' + c0 + ' → ' + gr.cssH + '）');
+  /* basisH 与可见高是否等比 —— 不等就意味着归一化坐标的分母和乘数不是同一个数 */
+  const drift = gr.basisH / gr.cssH;
+  console.log('  错位比例 basisH/cssH = ' + drift.toFixed(4) + '（=1 才是一致）');
+
+  console.log('\n=== C. 100% 下画一笔，看落在哪 ===');
+  /* 先造一条已知的笔迹（避开她真实数据，用一个独立 slot 更难——就直接在现有页上画） */
+  const before = JSON.parse(await ev(GEO));
+  const drew = await ev(`(async function(){
+    var cv=document.querySelector(${SEL});
+    var host=cv.parentElement;
+    host.scrollIntoView({block:'center'});
+    await new Promise(function(r){setTimeout(r,400);});
+    var r=cv.getBoundingClientRect();
+    var vTop=Math.max(r.top,0), vBot=Math.min(r.top+r.height, innerHeight);
+    var span=Math.max(vBot-vTop,1);
+    var y=vTop+span*0.5;                 /* 视口正中 */
+    function pe(t,yy){ return new PointerEvent(t,{pointerId:31,pointerType:'pen',isPrimary:true,
+      bubbles:true,cancelable:true,clientX:r.left+r.width*0.2,clientY:yy,pressure:0.5,
+      buttons:t==='pointerup'?0:1}); }
+    cv.dispatchEvent(pe('pointerdown',y));
+    await new Promise(function(res){
+      var i=0;
+      var step=function(){
+        i++;
+        if(i>14){ cv.dispatchEvent(pe('pointerup',y+ (i%2?1:0))); return setTimeout(res,300); }
+        cv.dispatchEvent(pe('pointermove', y));
+        setTimeout(function(){step();},14);
+      };
+      step();
+    });
+    return JSON.stringify({drewClientY: Math.round(y*10)/10, cssTop: Math.round(r.top*10)/10, cssH: Math.round(r.height*10)/10});
+  })()`);
+  const d = JSON.parse(drew);
+  console.log('  画的时候: ' + JSON.stringify(d));
+  await sleep(1200);
+  const after = JSON.parse(await ev(GEO));
+  console.log('  画完: ' + JSON.stringify(after));
+  /* 期望：笔尖在视口 y（绝对），换算成画布内 CSS y = drewClientY - cssTop，
+     再换算成归一化 = (drewClientY - cssTop) / cssH。
+     实际落点（归一化）= inkBotCSS / basisH（新笔在最下面）。
+     两者不等 = 错位。 */
+  const expectNorm = (d.drewClientY - d.cssTop) / d.cssH;
+  const actualNorm = after.inkBotCSS / after.basisH;
+  console.log('  期望归一化 y=' + expectNorm.toFixed(4) + '，实际落点 y=' + actualNorm.toFixed(4));
+  const errPct = Math.abs(actualNorm - expectNorm) * 100;
+  ok(errPct < 3, '新笔落点与笔尖一致（错位 ' + errPct.toFixed(1) + '%）—— 差得多就是"画了不是那个位置"');
+
+  if (evts.length) { console.log('\n  异常:'); [...new Set(evts)].slice(0, 6).forEach(e => console.log('    ! ' + e)); }
+
+  console.log('\n通过 ' + pass + ' / 失败 ' + fail);
+  proc.kill();
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.log('失败: ' + e.message); proc.exit(1); });
