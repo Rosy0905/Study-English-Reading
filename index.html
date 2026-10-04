@@ -203,10 +203,10 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js?v=20261004o"></script>
-<script src="assets/ekz-export.js?v=20261004o"></script>
-<script src="assets/ekz-pdf.js?v=20261004o"></script>
-<script src="manifest.js?v=20261004o"></script>
+<script src="assets/ekz-db.js?v=20261004p"></script>
+<script src="assets/ekz-export.js?v=20261004p"></script>
+<script src="assets/ekz-pdf.js?v=20261004p"></script>
+<script src="manifest.js?v=20261004p"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
@@ -643,15 +643,32 @@ const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
    这条链只在"导入的笔迹比旧备份少"时才犯，所以平时撞不上，一清空就必现。
    注意两个前缀要都列：ekz-ink-bk- 带结尾横线，而 ekz-ink-bkts- 的 bk 后面是 t，
    只写 ekz-ink-bk- 匹配不到时间戳那一半。 */
+/* 注意：故意**不**把 'ekz-wiped-' 列进前缀里。
+   清空代号必须在清空之后继续活着 —— 它正是用来拦那些还开着的
+   做题页标签页在退出时把旧笔迹写回来的。代号只带一个时间戳，
+   新画的笔时刻一定比它新，不影响之后正常使用；下次清空会覆盖重写。 */
 const CLEAR_LS_PREFIX=['ekz-zoom-','ekz-ink-bk-','ekz-ink-bkts-'];
 function wipeAllData(){
-  const stat={notes:0,marks:0,ls:0,ss:0,db:0,cache:0,dbFailed:[]};
+  const stat={notes:0,marks:0,ls:0,ss:0,db:0,cache:0,dbFailed:[],wiped:0};
   return getAllNotes().catch(()=>[])
     .then(notes=>{
       for(const r of notes){
         if(r.marks){for(const k in r.marks)stat.marks+=(r.marks[k]||[]).length;}
       }
       stat.notes=notes.length;
+      /* 【2026-10-04 清空复活修复】给每条被删的记录留一个"清空代号"。
+         做题页/复盘页开着的标签页内存里还抱着这些笔迹，
+         它們在 pagehide / beforeunload / visibilitychange 时会 flush，
+         把内存里的旧笔迹原样 put 回刚删干净的库 —— 于是"清空了还是 3 篇"。
+         记号是清空这一刻的毫秒数；别的页面落盘前会比自己更老就放弃回写。
+         注意要在 closeNotesDB 之前写，因为 close 之后也要拿到 id 列表。 */
+      try{
+        const now=Date.now();
+        for(const r of notes){
+          if(r&&r.id) localStorage.setItem('ekz-wiped-'+r.id, String(now));
+        }
+        stat.wiped=notes.length;
+      }catch(e){}
       /* 计数用的连接必须先关掉，否则后面 deleteDatabase 一定被挡 */
       return closeNotesDB();
     })

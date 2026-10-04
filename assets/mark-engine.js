@@ -192,7 +192,73 @@
         return o;
       }()) };
     }
+    /* 【2026-10-04 清空复活修复】配套的判定与清理。
+     * 键名 ekz-wiped-<recId>，值是"清空那一刻"的毫秒数，由主页清空时写入。
+     *
+     * 判定用的是 **localStorage 里的备份时间戳**（bkts）而不是 rec.ts：
+     * rec.ts 会被 markDirty 每次落笔刷新，用它比会"自我解除"。
+     * 内存里的这些笔是清空之前写的，bkts 记的就是它们写下的时刻，
+     * 那个时刻早于清空时刻 → 判定为旧货，拒绝回写。
+     * 清空之后用户新画的笔，bkts 会晚于清空时刻 → 正常落盘。 */
+    const WIPE_PREFIX = 'ekz-wiped-';
+
+    function inkTouchedAt() {
+      /* 内存里所有槽位的备份时刻取最新 = 这些笔最后被写下的时刻 */
+      var t = 0;
+      for (var k in papers) {
+        var p = papers[k];
+        if (!p || !p.slot) continue;
+        var b = parseInt(localStorage.getItem(BKTS + p.slot) || '0', 10);
+        if (isFinite(b) && b > t) t = b;
+      }
+      if (t) return t;
+      /* 没有备份时刻就退回记录时刻 */
+      var r = (rec && typeof rec.ts === 'number') ? rec.ts : 0;
+      var tss = (rec && rec.tss) || {};
+      for (var k2 in tss) if (typeof tss[k2] === 'number' && tss[k2] > r) r = tss[k2];
+      return r;
+    }
+    /* 内存里的笔迹是不是清空之前留下的旧货 */
+    function holdsStaleInk() {
+      try {
+        var w = parseInt(localStorage.getItem(WIPE_PREFIX + (rec && rec.id)) || '0', 10);
+        if (!isFinite(w) || w <= 0) return false;
+        var t = inkTouchedAt();
+        /* t 为 0 = 这页压根没有笔迹，不算旧货（空页面 flush 不该被拦） */
+        if (!t) return false;
+        return t < w;
+      } catch (e) { return false; }
+    }
+    /* 把这个页面的内存笔迹清掉，免得清空后紧接着画的第一笔底下还垫着旧货。
+     * 同时把同步备份也清掉，否则下次进来 loadSlot 会拿旧备份恢复。
+     * 注意 ink-paper 没有 clear() 方法，它导出的是 strokes 数组**引用**，
+     * 所以直接 length=0 再 redraw() 就干净了。 */
+    function clearInk() {
+      try {
+        for (var k in papers) {
+          var p = papers[k];
+          if (p && p.paper) {
+            if (p.paper.strokes && typeof p.paper.strokes.length === 'number') p.paper.strokes.length = 0;
+            if (typeof p.paper.clearLive === 'function') p.paper.clearLive();
+            if (typeof p.paper.redraw === 'function') p.paper.redraw();
+          }
+          if (p) { p.undoStack = []; p.redoStack = []; }
+          if (p && p.slot) {
+            try { localStorage.removeItem(BK + p.slot); localStorage.removeItem(BKTS + p.slot); } catch (e2) {}
+          }
+        }
+        if (rec && rec.marks) for (var k2 in rec.marks) rec.marks[k2] = [];
+        if (window.__ekzDebug) window.__ekzDebug.log('本页数据已被清空，放弃回写');
+      } catch (e) {}
+    }
     function markDirty(key) {
+      /* 【2026-10-04 清空复活修复】本页面内存里的笔迹，可能已经被"清空所有数据"
+         删掉了 —— 主页那边删的是 IndexedDB，而这个标签页还抱着旧笔迹活着。
+         三个出口（pagehide / beforeunload / visibilitychange）任一触发，
+         markDirty/flush 都会把内存里那几笔原样 put 回刚被删干净的库。
+         这就是她看到的"明明清空了，统计还是 3 篇做题页有数据"。
+         清空后本页先清一次内存，之后用户新画的笔正常落盘。 */
+      if (holdsStaleInk()) { clearInk(); return; }
       const p = papers[key];
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
       const now = Date.now();
@@ -209,6 +275,8 @@
       });
     }
     function flush() {
+      /* 同 markDirty：清空过就不要再把旧笔迹写回去 */
+      if (holdsStaleInk()) { clearTimeout(dirtyTimer); dirtyTimer = null; clearInk(); return Promise.resolve(false); }
       snapshotAll();
       clearTimeout(dirtyTimer); dirtyTimer = null;
       return saveMark(deepSnap());
