@@ -131,10 +131,35 @@
 
     /* ---- 尺寸 ---- */
     let resizeRetry = null;
+    /* 【2026-10-04 关键修复 · 笔迹"画了但看不到"】
+       归一化坐标（0~1）乘 W/H 得到像素，所以 W/H 一旦是错的高度，
+       笔迹就会整片落到画布可视区之外 —— 数据在、像素也在，就是看不见。
+       题目页实测：host 还没撑开就被量到高度，笔迹全画在 y=118~215，
+       而画布整体挂在视口下方 1019px 处，滚过去也找不到。
+       这里加两层防线：
+         ① 尺寸"可疑"（过小，或与内容实际高度差太多）时不算数，继续重试；
+         ② 每次成功 resize 都清掉旧的可信标记，让后续 ResizeObserver
+            触发的正确尺寸能覆盖掉第一次的错误尺寸。 */
+    let trustedSize = null;
+    function hostRealHeight() {
+      /* host 的 scrollHeight 是内容撑出来的高度，比 clientHeight 更能代表
+         "画布应该有多大"。CSS 限高时两者会不同，此时以 scrollHeight 为准。 */
+      return Math.max(host.scrollHeight || 0, host.offsetHeight || 0);
+    }
+    /* 坐标基准高度。归一化坐标乘的就是它，所以它必须**稳定**：
+       容器高度会随内容加载忽大忽小（图片后加载、步骤切换、页面重建），
+       一旦基准跟着变，所有已存在的笔迹就会被重新解释成不同位置 ——
+       表现就是"刷新后笔迹整体挪了地方、部分看着消失了"。
+       所以只增不减：内容长高就抬高基准，绝不缩回去。 */
+    let basisH = 0;
     function resize() {
       const d = DPR();
       const w = host.clientWidth, h = host.clientHeight;
-      if (!w || !h) {
+      const real = hostRealHeight();
+      /* 不可信：宽高为 0、太矮，或和内容高度差出一大截（说明还没撑开/被限高） */
+      const tooSmall = (!w || w < 40) || (!h || h < 40);
+      const mismatch = (h > 0 && real > 0 && real > h * 1.6);
+      if (tooSmall || mismatch) {
         if (resize.tries === undefined) resize.tries = 0;
         if (resize.tries++ > 60) return;
         clearTimeout(resizeRetry);
@@ -142,7 +167,15 @@
         return;
       }
       resize.tries = 0;
-      W = w; H = h;
+      const changed = (w !== W || h !== H);
+      W = w;
+      /* 高度用内容实际撑开的高度（不用 clientHeight）：题目页加载初期常还没撑到
+         最终高度，按 clientHeight 建画布会让归一化坐标基准偏小，
+         笔迹整片落到画布外 —— "看着写进去了却找不到"。
+         但只增不减，保证基准稳定、已有笔迹位置永不移位。 */
+      if (real > basisH) basisH = real;
+      H = basisH;
+      trustedSize = { w: W, h: H };
       /* 【2026-10-04 加】超大页面 + 高 DPR + 深度缩放时，画布 backing store
          可能超过浏览器单画布像素上限（约 16384px 边 / 2.68 亿像素），
          超了会静默创建失败，整张画布变空或只显示一截 —— 表现就是
@@ -159,14 +192,29 @@
       }
       redraw(); drawLive();
     }
+    /* 图片加载完 / 字体就位后，host 内容高度会变，坐标基准必须跟着重算。
+       否则"在图下面写的字"会按图未加载时的旧高度落笔，位置整体上移，
+       看着就是笔迹"消失"在图的错位处。 */
+    function onContentGrown() { resize(); }
     if (host.querySelector('img')) {
-      const img = host.querySelector('img');
-      if (!img.complete) img.addEventListener('load', resize, { once: true });
+      host.querySelectorAll('img').forEach(img => {
+        if (!img.complete) img.addEventListener('load', onContentGrown, { once: true });
+      });
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(onContentGrown).catch(() => {});
     }
     resize();
     let ro = null;
     if (window.ResizeObserver) { ro = new ResizeObserver(resize); ro.observe(host); }
     else addEventListener('resize', resize);
+    /* 兜底：挂载后前几秒内容还会陆续撑开（图片/子块/字体），
+       期间每次都重算尺寸，宁可多做几次也不能让坐标基准停在错的值上。 */
+    let settleN = 0;
+    const settle = setInterval(function () {
+      resize();
+      if (real === 0 || (Math.abs(hostRealHeight() - H) < 2 && ++settleN >= 3)) clearInterval(settle);
+    }, 350);
 
     /* 换宿主：把画布搬到新容器并重置重试（复盘左栏每步重建 focusPage 用） */
     function attach(newHost) {
@@ -176,10 +224,12 @@
       newHost.appendChild(cv); newHost.appendChild(lv);
       host = newHost;
       resize.tries = 0;
+      basisH = 0;   /* 换纸张 = 换内容，坐标基准要重新量 */
+      W = 0; H = 0;  /* 顺便作废旧基准，强制重绘 */
       if (ro) { ro.disconnect(); ro.observe(host); }
       resize();
-      const img = host.querySelector('img');
-      if (img && !img.complete) img.addEventListener('load', resize, { once: true });
+      const imgs = newHost.querySelectorAll('img');
+      imgs.forEach(img => { if (!img.complete) img.addEventListener('load', onContentGrown, { once: true }); });
     }
 
     /* ---- 荧光笔拉直（同笔记页） ---- */
@@ -478,6 +528,7 @@
       destroy() {
         clearTimeout(holdTimer); holdTimer = null;
         clearTimeout(resizeRetry); resizeRetry = null;
+        clearInterval(settle);   /* 内容撑开兜底轮询，一并停掉 */
         stopHlHold();
         curs.clear(); pickMain();
         if (ro) { ro.disconnect(); ro = null; }
