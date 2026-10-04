@@ -11,3 +11,4 @@ Desktop.ini
 # 本地状态文件（记录上次备份路径等，只这台机器有意义）
 .lastA
 .last-backup-path
+_test/
