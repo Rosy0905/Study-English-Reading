@@ -138,6 +138,35 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
 #ekz-inkbar.v #ekz-sz{position:absolute;left:50%;top:40px;width:80px;height:22px;margin:0;
   transform:translate(-50%,-50%) rotate(90deg);transform-origin:center center}
 #ekz-inkbar.v #ekz-szVal{position:absolute;left:50%;bottom:6px;top:auto;transform:translateX(-50%)}
+/* 【2026-10-04】荧光笔浓淡。放在调色盘里、**只有选中荧光笔才出现**，
+   所以不占工具栏位置。滑条 + 三颗彩色圆圈同一行，整行与色块网格齐平。 */
+#ekz-hlRow{display:none;align-items:center;gap:6px;padding:12px 4px 2px;width:100%;box-sizing:border-box}
+#ekz-hlRow.on{display:flex}
+#ekz-hlWord{font-size:12px;color:#a49dad;flex:0 0 auto;letter-spacing:.3px;min-width:2.2em;text-align:center}
+#ekz-hl{flex:1 1 auto;min-width:0;height:20px;margin:0 2px 0 0;-webkit-appearance:none;appearance:none;
+  background:transparent;outline:none}
+/* 最低那档也带点黄 —— 全白会跟"没画"分不清 */
+#ekz-hl::-webkit-slider-runnable-track{height:7px;border-radius:999px;
+  background:linear-gradient(90deg,#fde98a 0%,#fdd44f 45%,#f9b8c8 100%)}
+#ekz-hl::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:2px solid #f9a8d4;margin-top:-5.5px;cursor:pointer;
+  box-shadow:0 1px 5px rgba(249,168,212,.9)}
+#ekz-hl::-moz-range-track{height:7px;border-radius:999px;
+  background:linear-gradient(90deg,#fde98a 0%,#fdd44f 45%,#f9b8c8 100%)}
+#ekz-hl::-moz-range-thumb{width:16px;height:16px;border:2px solid #f9a8d4;border-radius:50%;
+  background:#fff;cursor:pointer}
+#ekz-hlVal{font-size:12px;font-family:ui-monospace,monospace;color:#c2185b;font-weight:600;
+  flex:0 0 auto;min-width:2.6em;text-align:right;letter-spacing:.2px;padding-right:2px;
+  user-select:none;-webkit-user-select:none}
+#ekz-hlDots{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+#ekz-hlDots i{width:19px;height:19px;border-radius:50%;cursor:pointer;display:block;
+  border:1px solid rgba(0,0,0,.12);transition:border-color .12s ease}
+#ekz-hlDots i:hover{border-color:#f9a8d4}
+/* 选中态：颜色不变、只加一层粉轮廓，不放大 */
+#ekz-hlDots i.on,#ekz-hlDots i.on:hover{border:2px solid #f48fb1}
+#ekz-hlDots i.d1{background:#fdf0b6}
+#ekz-hlDots i.d2{background:#fddd55}
+#ekz-hlDots i.d3{background:#f9c4d0}
 .ekzb.ico{padding:5px 8px;display:flex;align-items:center;justify-content:center}
 .ekzb.ico svg{width:20px;height:20px;display:block;overflow:visible;pointer-events:none}
 .ekzb.ico svg .tint,.ekzb.ico svg .tint2{transition:fill .18s ease}
@@ -237,6 +266,15 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
       '<button class="pSort" id="ekz-pSort" type="button" title="拖动排序：点一下进入排序模式，拖动色块调整顺序，再点一下保存">⇅</button>' +
       '<button class="pClose" id="ekz-pClose" type="button" aria-label="关闭">✕</button></span></div>' +
       '<div class="pGrid" id="ekz-pGrid"></div>' +
+      /* 浓淡行：只有选中荧光笔才显示（buildPalette 里切 .on） */
+      '<div id="ekz-hlRow">' +
+      '<span id="ekz-hlWord"></span>' +
+      '<input type="range" id="ekz-hl" min="12" max="40" step="1" title="荧光笔浓淡">' +
+      '<span id="ekz-hlVal"></span>' +
+      '<span id="ekz-hlDots"><i class="d1" data-a="12" title="淡"></i>' +
+      '<i class="d2" data-a="18" title="中"></i>' +
+      '<i class="d3" data-a="30" title="浓"></i></span>' +
+      '</div>' +
       '<div class="pCustom"><label>自定义</label>' +
       '<input type="color" id="ekz-pPicker" value="#dc2626">' +
       '<input class="pHex" id="ekz-pHex" type="text" maxlength="7" spellcheck="false" placeholder="#rrggbb" inputmode="text" autocomplete="off">' +
@@ -349,7 +387,8 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
     function buildPalette() {
       const customs = customColors[st.tool] || [];
       const cur = currentColor().toLowerCase();
-      pTitle.textContent = (st.tool === 'hl' ? '荧光笔颜色' : '钢笔颜色')
+      syncHlRow();
+      pTitle.textContent = (st.tool === 'hl' ? '荧光笔浓淡' : '钢笔颜色')
         + (sortMode ? '　· 拖动色块排顺序，再点 ⇅ 完成' : (customs.length ? '　· 长按自定义色块可删除' : ''));
       pGrid.innerHTML = '';
       const addSwatch = item => {
@@ -443,6 +482,58 @@ html.ekz-pen-mode .ekzb:not(.on):hover{background:transparent}
       clearTimeout(pal._t);
       pal._t = setTimeout(() => { pal.style.display = 'none'; pal.style.transition = ''; pal.style.transform = ''; }, 210);
     }
+    /* ---------- 荧光笔浓淡（2026-10-04） ----------
+       浓度存在 localStorage['ekz-hl-alpha']，由 ink-paper 读同一份。
+       这里只负责改它并重画一次，让当前已经画在屏幕上的荧光笔跟着变浅/变浓。 */
+    const hlRow = pal.querySelector('#ekz-hlRow');
+    const hlWord = pal.querySelector('#ekz-hlWord');
+    const hlSl = pal.querySelector('#ekz-hl');
+    const hlVal = pal.querySelector('#ekz-hlVal');
+    const hlDots = pal.querySelector('#ekz-hlDots');
+    const HL_MIN = 12, HL_MAX = 40, HL_DEF = 18;
+    const HL_PRESETS = [12, 18, 30];
+    /* 词档比数值细，好让用户知道落在哪一档 */
+    function hlWordOf(p) {
+      return p <= 13 ? '淡' : p <= 17 ? '偏淡' : p <= 22 ? '中'
+           : p <= 28 ? '偏浓' : p <= 35 ? '浓' : '特浓';
+    }
+    function readHl() {
+      try {
+        /* 存的是 0.12~0.40 的小数，滑条用的是 12~40 的整数。
+           这里必须 *100 换算，用 parseInt 会把 0.28 读成 0 再被 clamp 到下限 12。 */
+        const v = Math.round(parseFloat(localStorage.getItem('ekz-hl-alpha')) * 100);
+        if (isFinite(v)) return Math.min(HL_MAX, Math.max(HL_MIN, v));
+      } catch (e) {}
+      return HL_DEF;
+    }
+    function writeHl(p) {
+      const v = Math.min(HL_MAX, Math.max(HL_MIN, Math.round(p)));
+      try { localStorage.setItem('ekz-hl-alpha', String(v / 100)); } catch (e) {}
+      return v;
+    }
+    /* 把工具栏这三个控件同步到当前浓度。opts.repaint=true 时重画屏幕上的笔迹 */
+    function syncHlRow(repaint) {
+      const v = readHl();
+      hlSl.value = String(v);
+      hlVal.textContent = v + '%';
+      hlWord.textContent = hlWordOf(v);
+      hlRow.classList.toggle('on', st.tool === 'hl');
+      [].forEach.call(hlDots.children, el => {
+        if (+el.dataset.a === v) el.classList.add('on'); else el.classList.remove('on');
+      });
+      if (repaint) {
+        /* 重画所有纸张，让已经画在屏幕上的荧光笔立刻变成新浓度。
+           每一笔自带落笔时的浓度（写笔时记的），所以旧笔不会被重新染色，
+           这里只是把**画布清干净再按原顺序重放一遍**。 */
+        try { if (window.EkzInkPaper && typeof window.EkzInkPaper.redrawAll === 'function') window.EkzInkPaper.redrawAll(); } catch (e) {}
+      }
+    }
+    hlSl.addEventListener('input', e => { writeHl(+e.currentTarget.value); syncHlRow(false); });
+    hlSl.addEventListener('change', e => { writeHl(+e.currentTarget.value); syncHlRow(true); });
+    [].forEach.call(hlDots.children, el => {
+      el.addEventListener('click', e => { e.preventDefault(); writeHl(+e.currentTarget.dataset.a); syncHlRow(true); });
+    });
+
     pal.querySelector('#ekz-pClose').addEventListener('click', e => { e.preventDefault(); closePalette(); });
     pal.querySelector('#ekz-pSort').addEventListener('click', e => {
       e.preventDefault();

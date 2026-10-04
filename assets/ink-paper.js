@@ -63,6 +63,33 @@
     }
     let editing = false;
 
+    /* 【2026-10-04】荧光笔浓淡可调。
+       原来写死 .32，现在从 localStorage 读。范围 .12 ~ .40、默认 .18
+       —— 她反馈32% 太遮真题文字，要求更淡。
+       下限抬到 .12 而不是 0：全透明时笔迹等于没画，刷新后自己都认不出在哪。
+       存的是**新画的笔**用的浓度；已存的旧笔按各自记录里的值重放，
+       改浓度不会把以前画的荧光笔重新染色。 */
+    const HL_KEY = 'ekz-hl-alpha';
+    const HL_MIN = .12, HL_MAX = .40, HL_DEF = .18;
+    function hlAlpha() {
+      try {
+        const v = parseFloat(localStorage.getItem(HL_KEY));
+        if (isFinite(v)) return Math.min(HL_MAX, Math.max(HL_MIN, v));
+      } catch (e) {}
+      return HL_DEF;
+    }
+    function setHlAlpha(v) {
+      const a = Math.min(HL_MAX, Math.max(HL_MIN, v));
+      try { localStorage.setItem(HL_KEY, String(a)); } catch (e) {}
+      return a;
+    }
+    function hlWord(a) {
+      /* 滑条左端那行字。词档比数值细，好让用户知道大概落在哪一档 */
+      return a <= .13 ? '淡' : a <= .17 ? '偏淡' : a <= .22 ? '中'
+           : a <= .28 ? '偏浓' : a <= .35 ? '浓' : '特浓';
+    }
+    function getHlAlpha() { return hlAlpha(); }
+
     /* ---- 画一笔（同笔记页 stroke()） ---- */
     function stroke(c, s) {
       const P0 = s.pts;
@@ -70,7 +97,9 @@
       const P = P0.map(q => ({ x: q.x * W, y: q.y * H, p: q.p === undefined ? .5 : q.p }));
       c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
       if (s.tool === 'er') { c.globalCompositeOperation = 'destination-out'; c.strokeStyle = c.fillStyle = '#000'; c.globalAlpha = 1; }
-      else if (s.tool === 'hl') { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = .32; }
+      /* 浓度优先取这笔自己记录的 a（写笔时存），没有才用当前设置。
+         这样调了浓度以后，旧笔不会被重新染色。 */
+      else if (s.tool === 'hl') { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = (typeof s.a === 'number') ? s.a : hlAlpha(); }
       else { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = 1; }
       if (P.length === 1) { c.beginPath(); c.arc(P[0].x, P[0].y, s.size / 2, 0, 7); c.fill(); c.restore(); return; }
       if (s.tool === 'pen') {
@@ -559,6 +588,9 @@
            结果擦除效果存不住 —— 她实测"橡皮擦掉笔迹后刷新，笔迹又全回来了"。
            擦除是一段真实的历史，必须和笔迹一起按顺序存下来才能重放。
            redraw 已改成按原始顺序重放，橡皮只擦它之前画的东西，不会误伤后来的。 */
+        /* 荧光笔把落笔那一刻的浓度记进笔画数据。
+           以后改了设置只影响新画的笔，这一笔显示还是原来的深浅。 */
+        if (mine.tool === 'hl' && typeof mine.a !== 'number') mine.a = hlAlpha();
         strokes.push(mine);
         if (!state.hidden) {
           if (mine.tool === 'er' || mine.tool === 'hl') redraw();
@@ -604,12 +636,16 @@
       return out;
     }
 
-    return {
+    /* 【2026-10-04】登记进 _live，好让工具栏改荧光笔浓度时能立刻重画。
+       destroy 时注销，避免复盘页反复换步把旧纸张留在表里。 */
+    const inst = {
       cv, lv, strokes, host,
       resize,
       attach,
       redraw,
       exportCanvas,
+      /* 荧光笔浓淡：工具栏调这两个，读的是同一个 localStorage 键 */
+      getHlAlpha, setHlAlpha, hlWord,
       setEditing(on) {
         editing = !!on;
         syncTouchAction();
@@ -634,9 +670,28 @@
         cv.removeEventListener('pointercancel', endPointer);
         cv.removeEventListener('pointerleave', onLeave);
         cv.remove(); lv.remove();
+        /* 从登记表里摘掉，否则复盘页反复换步会在 _live 里堆一堆死纸张 */
+        if (window.EkzInkPaper) window.EkzInkPaper._unregister(inst);
       }
     };
+    if (window.EkzInkPaper) window.EkzInkPaper._register(inst);
+    return inst;
   }
 
-  window.EkzInkPaper = { create };
+  window.EkzInkPaper = {
+    create,
+    /* 【2026-10-04】登记所有建过的纸张，工具栏改荧光笔浓度时要用它重画。
+       改完设置立刻看到效果，不然得刷新才变。销毁时会被 remove 摘掉。 */
+    _live: [],
+    _register(p) { try { this._live.push(p); } catch (_) {} return p; },
+    _unregister(p) {
+      try { this._live = this._live.filter(function (x) { return x !== p; }); } catch (_) {}
+    },
+    redrawAll() {
+      var arr = this._live.slice();
+      for (var i = 0; i < arr.length; i++) {
+        try { if (arr[i] && typeof arr[i].redraw === 'function') arr[i].redraw(); } catch (_) {}
+      }
+    }
+  };
 })();
