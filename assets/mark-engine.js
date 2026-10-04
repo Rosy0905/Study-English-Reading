@@ -113,28 +113,13 @@
         if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔');
       }
       arr.forEach(normStroke);
-      /* 【2026-10-04 关键】剔掉历史遗留的橡皮笔迹（tool==='er'）。
-         它们在旧版会被存进数据、并在重画时用 destination-out
-         把已经画好的钢笔荧光笔一起擦掉 —— 平板上长按误触橡皮后，
-         之后每次刷新/切荧光笔都会把笔迹擦掉一分，表现就是
-         "荧光笔一画钢笔也跟着消失""钢笔刷新全无"。
-         现在橡皮不再入数据层，这些旧残留也要清掉，否则一刷新又复发。 */
-      var before = arr.length;
-      for (var i = arr.length - 1; i >= 0; i--) {
-        if (arr[i] && arr[i].tool === 'er') arr.splice(i, 1);
-      }
-      if (before !== arr.length) {
-        /* 【2026-10-04 补】原来只在内存里 splice，没写回数据库。
-           结果：下次 snapshotAll / 任何一次保存都把带橡皮的旧数组原样写回，
-           旧橡皮一次又一次复活 —— 她平板上"怎么改了还犯"就是这个原因。
-           现在剔除后立刻同步落盘（备份）+ 异步写主库，一次性清干净。 */
-        writeBackup(slot, arr);
-        rec.ts = Date.now();
-        saveMark(deepSnap());
-        if (window.__ekzDebug) {
-          window.__ekzDebug.log('已剔除 ' + (before - arr.length) + ' 条旧橡皮残留并写回数据库（' + before + '→' + arr.length + '）');
-        }
-      }
+      /* 【2026-10-04 撤回】这里原本会剔掉 tool==='er' 的笔迹，**是错的，已撤销**。
+         误判：把她的正常擦除记录当成"平板误触脏数据"。
+         事实：那些橡皮是她自己在 2017t3 测试时画了又擦的真实操作记录。
+         橡皮是历史的一部分，必须保留 —— 删掉就等于"擦除效果存不住"，
+         她实测"橡皮擦掉笔迹后刷新笔迹又全回来"就是上一版造成的。
+         现在 ink-paper 的 redraw 已改成按原始顺序重放，橡皮只擦它之前画的，
+         不会误伤后来的笔迹，所以不需要也不应该删数据。 */
       /* 载入诊断：刷新后先看这两行，就知道是"没存进去"还是"没载出来"。
          笔数为 0 而你以为写了 → 保存问题；笔数正常但看不到 → 渲染/挂载问题。 */
       if (window.__ekzDebug) window.__ekzDebug.log('载入 ' + slot + '：' + arr.length + ' 笔');
