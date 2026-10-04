@@ -18,7 +18,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/154.0.4258.53/msedge.exe';
-const BASE = 'http://localhost:8123';
+const BASE = 'http://127.0.0.1:8131';
 const URL = BASE + '/library/2017/2017-text3-%E5%81%9A%E9%A2%98.html';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
