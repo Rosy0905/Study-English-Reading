@@ -152,45 +152,64 @@
        表现就是"刷新后笔迹整体挪了地方、部分看着消失了"。
        所以只增不减：内容长高就抬高基准，绝不缩回去。 */
     let basisH = 0;
+    /* W/H 是归一化坐标的乘数，**绝对不能是 0** —— 一旦为 0，
+       所有笔迹会塌到同一个像素点上，表现就是"画了立刻消失"。
+       任何分支都必须先落一个可用值，再谈优化。 */
     function resize() {
-      const d = DPR();
       const w = host.clientWidth, h = host.clientHeight;
       const real = hostRealHeight();
-      /* 不可信：宽高为 0、太矮，或和内容高度差出一大截（说明还没撑开/被限高） */
+      /* 可信度判断：容器太矮、或与内容高度差一大截，说明还没撑开 / 被 CSS 限高。
+         但这**只影响"要不要继续追更好的值"，不影响"给不给值"** ——
+         之前写成不可信就 return，导致 H 永远是 0，笔迹全塌没。 */
       const tooSmall = (!w || w < 40) || (!h || h < 40);
       const mismatch = (h > 0 && real > 0 && real > h * 1.6);
-      if (tooSmall || mismatch) {
-        if (resize.tries === undefined) resize.tries = 0;
-        if (resize.tries++ > 60) return;
+      const suspect = tooSmall || mismatch;
+
+      if (suspect && resize.tries < 60) {
+        resize.tries++;
+        /* 仍然先按现有信息落一个值，保证画布可用、笔迹不塌没 */
+        applySize(w, h, real);
         clearTimeout(resizeRetry);
         resizeRetry = setTimeout(resize, 200);   /* destroy 后必须停，否则会一直跑 */
         return;
       }
       resize.tries = 0;
+      applySize(w, h, real);
+    }
+    function applySize(w, h, real) {
       const changed = (w !== W || h !== H);
-      W = w;
+      /* 宽度：容器宽；为 0 时退到 host 自身宽，绝不留 0 */
+      W = (w > 0) ? w : (host.getBoundingClientRect().width || W || 1);
       /* 高度用内容实际撑开的高度（不用 clientHeight）：题目页加载初期常还没撑到
          最终高度，按 clientHeight 建画布会让归一化坐标基准偏小，
          笔迹整片落到画布外 —— "看着写进去了却找不到"。
-         但只增不减，保证基准稳定、已有笔迹位置永不移位。 */
-      if (real > basisH) basisH = real;
-      H = basisH;
+         只增不减：内容长高就抬高基准，已有笔迹位置永不漂移。
+         实在量不到内容高度才退回容器高，再不行给 1px（不塌没）。 */
+      const cand = Math.max(real, h, 0);
+      if (cand > 0) basisH = Math.max(basisH, cand);
+      H = basisH > 0 ? basisH : 1;
+      if (W <= 0) W = 1;
       trustedSize = { w: W, h: H };
       /* 【2026-10-04 加】超大页面 + 高 DPR + 深度缩放时，画布 backing store
          可能超过浏览器单画布像素上限（约 16384px 边 / 2.68 亿像素），
          超了会静默创建失败，整张画布变空或只显示一截 —— 表现就是
          "笔迹断节/消失、放大才看到残点"。这里把 DPR 削到不超限，
          只降分辨率不丢坐标，笔迹位置照样正确。 */
-      let dd = d;
+      let dd = DPR();
       const MAX = 16384;
       if (W * dd > MAX) dd = MAX / W;
       if (H * dd > MAX) dd = MAX / H;
       if (dd < 1) dd = 1;
       for (const pair of [[cv, ctx], [lv, lctx]]) {
-        pair[0].width = Math.max(1, Math.round(W * dd)); pair[0].height = Math.max(1, Math.round(H * dd));
+        /* 尺寸没变就不要重设 width/height —— 一改就会清空画布，
+           没必要地反复清空会让"正在画的笔"闪断。 */
+        const bw = Math.max(1, Math.round(W * dd)), bh = Math.max(1, Math.round(H * dd));
+        if (pair[0].width !== bw) pair[0].width = bw;
+        if (pair[0].height !== bh) pair[0].height = bh;
         pair[1].setTransform(dd, 0, 0, dd, 0, 0);
       }
-      redraw(); drawLive();
+      if (changed) redraw();
+      drawLive();
     }
     /* 图片加载完 / 字体就位后，host 内容高度会变，坐标基准必须跟着重算。
        否则"在图下面写的字"会按图未加载时的旧高度落笔，位置整体上移，
@@ -213,7 +232,13 @@
     let settleN = 0;
     const settle = setInterval(function () {
       resize();
-      if (real === 0 || (Math.abs(hostRealHeight() - H) < 2 && ++settleN >= 3)) clearInterval(settle);
+      /* 【2026-10-04 修正】这里必须自己再取一次内容高度。
+         原写法引用了 resize() 内部的局部变量 real，属于跨作用域引用，
+         在平板上直接抛 ReferenceError（她截图里满屏的
+         "real is not defined @ink-paper.js:216" 就是这条），
+         异常导致每次 resize 都中断，画布高度始终没设对。 */
+      const cur = hostRealHeight();
+      if (!cur || (Math.abs(cur - H) < 2 && ++settleN >= 3)) clearInterval(settle);
     }, 350);
 
     /* 换宿主：把画布搬到新容器并重置重试（复盘左栏每步重建 focusPage 用） */
