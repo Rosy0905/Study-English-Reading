@@ -113,6 +113,19 @@
         if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔');
       }
       arr.forEach(normStroke);
+      /* 【2026-10-04 关键】剔掉历史遗留的橡皮笔迹（tool==='er'）。
+         它们在旧版会被存进数据、并在重画时用 destination-out
+         把已经画好的钢笔荧光笔一起擦掉 —— 平板上长按误触橡皮后，
+         之后每次刷新/切荧光笔都会把笔迹擦掉一分，表现就是
+         "荧光笔一画钢笔也跟着消失""钢笔刷新全无"。
+         现在橡皮不再入数据层，这些旧残留也要清掉，否则一刷新又复发。 */
+      var before = arr.length;
+      for (var i = arr.length - 1; i >= 0; i--) {
+        if (arr[i] && arr[i].tool === 'er') arr.splice(i, 1);
+      }
+      if (before !== arr.length && window.__ekzDebug) {
+        window.__ekzDebug.log('已剔除 ' + (before - arr.length) + ' 条旧橡皮残留（会擦掉其他笔迹）');
+      }
       /* 载入诊断：刷新后先看这两行，就知道是"没存进去"还是"没载出来"。
          笔数为 0 而你以为写了 → 保存问题；笔数正常但看不到 → 渲染/挂载问题。 */
       if (window.__ekzDebug) window.__ekzDebug.log('载入 ' + slot + '：' + arr.length + ' 笔');
