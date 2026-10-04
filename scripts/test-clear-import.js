@@ -4,7 +4,11 @@ const { spawn } = require("child_process");
 const fs = require("fs"), os = require("os"), path = require("path");
 const ROOT = process.cwd();
 const PORT = 9990 + Math.floor(Math.random() * 60);
-const url = rel => "file:///" + path.join(ROOT, rel).replace(/\\/g, "/");
+/* 【2026-10-04 改】原来走 file:/// —— IndexedDB 在 file 协议下被浏览器
+   按 origin 隔离，导入写入和 getAllNotes 读到的可能不是同一个库，
+   测出来的"清空无效/导入无数据"是假象。改走本地 http（localhost:8123），
+   和她实际用的方式一致。 */
+const url = rel => "http://localhost:8123/" + rel;
 
 (async () => {
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), "clr-imp-"));

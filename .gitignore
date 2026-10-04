@@ -12,3 +12,6 @@ Desktop.ini
 .lastA
 .last-backup-path
 _test/
+
+# 临时备份目录（改动前的逐字节备份，本机留存不上库）
+_backup_*/
