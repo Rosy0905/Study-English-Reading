@@ -592,7 +592,7 @@
   function zoomEl(el, z, cx, cy) {
     if (!el) return;
     var sc = el.closest('.scroll');
-    if (!sc) return;
+    if (!sc) sc = el;   /* 兜底：没有 .scroll 祖先也能缩放，避免"有时缩放不了" */
     /* 关键：pageWrap 是 margin:0 auto 居中的，改宽度时左边缘会重新居中而左移，
        不能假设左上角不动。正确做法是先量"改宽前"的位置，改完再量一次实际位置，
        用两次实测差值来反推该滚多少 —— 这样无论是否居中、是否重排都不偏。 */
@@ -616,17 +616,25 @@
       onPinchStart: function () { z0 = rvZoom; },
       onPinch: function (f, cx, cy) {
         rvZoom = Math.min(3, Math.max(1, z0 * f));
-        if (IS_DO) {
-          zoomEl(document.getElementById('articleWrap'), rvZoom, cx, cy);
-          zoomEl(document.getElementById('questionWrap'), rvZoom, cx, cy);
-        } else {
-          /* 复盘页没有 articleWrap/questionWrap，左栏是 focusPage、
-             右栏是解析容器 ekz-rvWrap —— 之前硬编码那俩 ID 全是 null，
-             zoomEl 直接 no-op，所以复盘"完全没有双指缩放"。现在按模式走。 */
-          zoomEl(document.getElementById('focusPage'), rvZoom, cx, cy);
-          var rw = document.getElementById('ekz-rvWrap');
-          if (rw) zoomEl(rw, rvZoom, cx, cy);
+        /* 只缩放「手指中心命中的那一栏」。
+           之前左右两栏同时缩放、还共用一个手指锚点，双指横跨两栏时两栏互相打架，
+           表现出来就是"照中心缩放却往右上角飘"（做题页）和"手指放大左边、右边在动"（复盘页）。
+           现在按 cx,cy 落在哪个栏的可视区来选目标，只缩那一栏，锚点不再错位。 */
+        var targets = IS_DO
+          ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
+          : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+        targets = targets.filter(Boolean);
+        var hit = null, best = Infinity;
+        for (var i = 0; i < targets.length; i++) {
+          var el = targets[i];
+          var sc = el.closest('.scroll') || el;
+          var r = sc.getBoundingClientRect();
+          if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
+          var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
+          var d = dx * dx + dy * dy;
+          if (d < best) { best = d; hit = el; }
         }
+        if (hit) zoomEl(hit, rvZoom, cx, cy);
         try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
       }
     };

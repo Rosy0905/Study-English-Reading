@@ -58,7 +58,11 @@
   /* 旧格式兼容：[x,y] 数组 → {x,y,p} */
   function normStroke(s) {
     if (s && Array.isArray(s.pts)) {
-      s.pts = s.pts.map(q => Array.isArray(q) ? { x: q[0], y: q[1], p: .5 } : { x: q.x, y: q.y, p: (q.p === undefined ? .5 : q.p) });
+      /* 清掉历史数据里可能混入的 NaN/Infinity 坏点，否则渲染时整条笔迹残缺、
+         写库时事务 abort 导致同一条记录全部保存失败（刷新丢笔记）。 */
+      s.pts = s.pts
+        .filter(q => q && (typeof q.x === 'number' || Array.isArray(q)) && isFinite(q.x) && isFinite(q.y))
+        .map(q => Array.isArray(q) ? { x: q[0], y: q[1], p: .5 } : { x: q.x, y: q.y, p: (q.p === undefined ? .5 : q.p) });
     }
     return s;
   }
@@ -76,6 +80,8 @@
     let activeKey = null;
     let dirtyTimer = null;
     let inkOn = false;
+    /* 全局时间线撤销/重做栈（修复多纸张各自独立栈导致的清空撤销混乱） */
+    const undoLog = [], redoLog = [];
 
     function snapshotAll() {
       for (const k in papers) {
@@ -123,11 +129,10 @@
           toast: opts.toast, readonly: p.readonly,
           onPinch: gest && gest.onPinch, onPinchStart: gest && gest.onPinchStart,
           onDirty: function () {
-            /* 每写完一笔压进撤销栈（之前漏了这步，↶撤销/↷重做一直是空的） */
+            /* 每写完一笔压进全局撤销栈 */
             activeKey = key;
             const last = arr[arr.length - 1];
-            if (last) p.undoStack.push({ t: 'add', s: last });
-            p.redoStack.length = 0;
+            if (last) { undoLog.push({ t: 'add', key: key, s: last }); redoLog.length = 0; }
             markDirty(key);
           }
         });
@@ -148,7 +153,7 @@
       arr.forEach(normStroke);
       arr.forEach(function (s2) { p.paper.strokes.push(s2); });
       p.slot = slot;
-      p.undoStack.length = 0; p.redoStack.length = 0;
+      undoLog.length = 0; redoLog.length = 0;  /* 切步骤=新上下文，清空全局撤销/重做栈 */
       p.paper.redraw();
     }
 
@@ -167,42 +172,44 @@
       for (const k in papers) if (papers[k].paper) papers[k].paper.redraw();
     }
     function undo() {
-      const p = activeEntry(); if (!p) return false;
-      const op = p.undoStack.pop(); if (!op) return false;
+      const op = undoLog.pop(); if (!op) return false;
+      const p = papers[op.key];
+      if (!p || !p.paper) { redoLog.push(op); return false; }
       if (op.t === 'add') {
         const i = p.paper.strokes.indexOf(op.s);
         if (i >= 0) p.paper.strokes.splice(i, 1);
-        p.redoStack.push(op);
+        redoLog.push(op);
       } else if (op.t === 'clear') {
-        /* 撤销"清空" = 把被清掉的笔画放回来 */
         p.paper.strokes.push.apply(p.paper.strokes, op.s);
-        p.redoStack.push(op);
+        redoLog.push(op);
       }
+      activeKey = op.key;
       p.paper.redraw(); markDirty(p.key); return true;
     }
     function redo() {
-      const p = activeEntry(); if (!p) return false;
-      const op = p.redoStack.pop(); if (!op) return false;
+      const op = redoLog.pop(); if (!op) return false;
+      const p = papers[op.key];
+      if (!p || !p.paper) { undoLog.push(op); return false; }
       if (op.t === 'add') {
         p.paper.strokes.push(op.s);
-        p.undoStack.push(op);   /* 重做完成要压回撤销栈，否则再撤销就空了 */
+        undoLog.push(op);   /* 重做完成要压回撤销栈，否则再撤销就空了 */
       } else if (op.t === 'clear') {
         op.s = p.paper.strokes.splice(0);
-        p.undoStack.push(op);
+        undoLog.push(op);
       }
+      activeKey = op.key;
       p.paper.redraw(); markDirty(p.key); return true;
     }
     function clearActive() {
       /* 清空所有已挂载纸张的笔迹（文章页 / 题目页 / 复盘左右栏等）。
-         之前只清 activeEntry() 选中的那一张，而刷新后 activeKey 为空、
-         activeEntry 会回退到第一张（通常是空的文章页），于是"点清空清不掉"，
-         得再画一笔激活对应纸张才能清掉。现在统一清空全部，符合"清空=清掉我的批注"的预期。 */
+         每页清空作为一条全局撤销记录，撤销时按时间逐页恢复，
+         不再出现"只撤回一页、另一页丢失"的混乱。 */
       let any = false;
       for (const k in papers) {
         const p = papers[k];
         if (!p || !p.paper || !p.paper.strokes.length) continue;
-        p.undoStack.push({ t: 'clear', s: p.paper.strokes.splice(0) });
-        p.redoStack.length = 0;
+        undoLog.push({ t: 'clear', key: k, s: p.paper.strokes.splice(0) });
+        redoLog.length = 0;
         p.paper.redraw(); markDirty(k); any = true;
       }
       return any;

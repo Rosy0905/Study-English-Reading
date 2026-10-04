@@ -250,11 +250,14 @@
     }
     function rel(e) {
       const r = cv.getBoundingClientRect();
-      return {
-        x: (e.clientX - r.left) / r.width,
-        y: (e.clientY - r.top) / r.height,
-        p: (e.pressure > .01 && e.pressure <= 1) ? e.pressure : .5
-      };
+      const w = r.width || host.clientWidth, h = r.height || host.clientHeight;
+      /* 坏点防御：缩放/重排瞬间 host 可能瞬态尺寸为 0，或触摸坐标偶发 NaN/Infinity。
+         这类点写进 IndexedDB 会让结构化克隆事务 abort（整批保存失败→刷新丢），
+         渲染时也会把整条笔迹画歪/残缺（残余碎点）。源头拦截：返回 null。 */
+      if (!(w > 0) || !(h > 0)) return null;
+      const x = (e.clientX - r.left) / w, y = (e.clientY - r.top) / h;
+      if (!isFinite(x) || !isFinite(y)) return null;
+      return { x: x, y: y, p: (e.pressure > .01 && e.pressure <= 1) ? e.pressure : .5 };
     }
     function canDraw(e) {
       if (e.pointerType === 'touch') return state.finger;
@@ -290,6 +293,7 @@
       try { cv.setPointerCapture(e.pointerId); } catch (_) {}
       /* 这一根手指/笔独占一个槽位 */
       const mine = rel(e);
+      if (!mine) return;
       curs.set(e.pointerId, { tool: state.tool, color: state.tool === 'er' ? '#000' : state.color[state.tool], size: state.size[state.tool], pts: [mine] });
       /* 长按变橡皮 / 拉直这类单笔逻辑只跟主笔走，多指时不互相干扰 */
       if (!cur) { cur = curs.get(e.pointerId); curId = e.pointerId; holdFired = false; lastPointerRel = mine; }
@@ -329,6 +333,7 @@
       if ((e.buttons > 0) || mine.tool === 'er') {
         if (state.tool === 'er' || mine.tool === 'er') {
           const now = rel(e);
+          if (!now) return;
           const size = mine.tool === 'er' ? mine.size : state.size.er;
           drawEraserCursor(now.x * W, now.y * H, size);
           if (mine === cur) lastPointerRel = now;
@@ -342,6 +347,7 @@
       }
       const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
       const raw = rel(evs[evs.length - 1]);
+      if (!raw) return;
       if (mine.tool === 'er') {
         const L = mine.pts[mine.pts.length - 1];
         let x = raw.x, y = raw.y, p = raw.p;
