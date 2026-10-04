@@ -254,14 +254,14 @@
       wrapEl.style.cssText = 'position:relative;min-height:100%';
       scroll.insertBefore(wrapEl, content);
       wrapEl.appendChild(content);
-      engine.mountPaper('rv-right', 'rv-right-step-' + rvStepIdx, wrapEl);
+      engine.mountPaper('rv-right', 'rv-right-step-' + rvStepIdx, wrapEl, false, rvGz);
       rvRightSlot = 'rv-right-step-' + rvStepIdx;
     }
 
     /* 左栏：作者每步重建 focusPage，观察到就挂画布、按图切笔迹层 */
     var leftStage = document.getElementById('leftStage');
     var leftPanel = document.getElementById('leftPanel');
-    var rvGz = null;
+    var rvGz = rvGestures();   /* 复盘左右两栏共用同一套手势（之前只给了左栏，右栏解析无法缩放） */
 
     /* 真正干活的挂载逻辑。原来整段塞在观察器回调里，
        而复盘页自己那份脚本是同步 render() 的 —— 引擎 init() 是 await 异步的，
@@ -277,7 +277,6 @@
       if (lp.hidden) lp.hidden = false;
       var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
       var slot = 'rv-left-' + asset;
-      if (!rvGz) rvGz = rvGestures();
       engine.mountPaper('rv-left', slot, fp, false, rvGz);
       if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
       rvLeftSlot = slot;
@@ -593,23 +592,41 @@
   function zoomEl(el, z, cx, cy) {
     if (!el) return;
     var sc = el.closest('.scroll');
-    var r = sc ? sc.getBoundingClientRect() : null;
-    var px = r ? cx - r.left + sc.scrollLeft : 0, py = r ? cy - r.top + sc.scrollTop : 0;
-    var oldW = el.offsetWidth;
+    if (!sc) return;
+    /* 关键：pageWrap 是 margin:0 auto 居中的，改宽度时左边缘会重新居中而左移，
+       不能假设左上角不动。正确做法是先量"改宽前"的位置，改完再量一次实际位置，
+       用两次实测差值来反推该滚多少 —— 这样无论是否居中、是否重排都不偏。 */
+    var before = el.getBoundingClientRect();
+    var beforeScroll = { l: sc.scrollLeft, t: sc.scrollTop };
     el.style.width = 'min(calc(100% * ' + z + '), calc(820px * ' + z + '))';
-    if (sc && oldW) {
-      var k = el.offsetWidth / oldW;
-      sc.scrollLeft = px * k - (cx - r.left);
-      sc.scrollTop = py * k - (cy - r.top);
-    }
+    var after = el.getBoundingClientRect();
+    var k = after.width / before.width;
+    if (!isFinite(k) || k <= 0) return;
+    /* 手指在元素自身坐标系里的位置（改宽前，viewport px） */
+    var localX = cx - before.left, localY = cy - before.top;
+    /* 改完宽度后（还没动滚动条时），那个点跑到了 after.left + localX*k 这个视口位置；
+       我们要把它拉回 (cx,cy)，于是把滚动容器滚过这段差值。 */
+    var newLeft = after.left + localX * k;
+    var newTop = after.top + localY * k;
+    sc.scrollLeft = beforeScroll.l + (newLeft - cx);
+    sc.scrollTop = beforeScroll.t + (newTop - cy);
   }
   function rvGestures() {
     return {
       onPinchStart: function () { z0 = rvZoom; },
       onPinch: function (f, cx, cy) {
         rvZoom = Math.min(3, Math.max(1, z0 * f));
-        zoomEl(document.getElementById('articleWrap'), rvZoom, cx, cy);
-        zoomEl(document.getElementById('questionWrap'), rvZoom, cx, cy);
+        if (IS_DO) {
+          zoomEl(document.getElementById('articleWrap'), rvZoom, cx, cy);
+          zoomEl(document.getElementById('questionWrap'), rvZoom, cx, cy);
+        } else {
+          /* 复盘页没有 articleWrap/questionWrap，左栏是 focusPage、
+             右栏是解析容器 ekz-rvWrap —— 之前硬编码那俩 ID 全是 null，
+             zoomEl 直接 no-op，所以复盘"完全没有双指缩放"。现在按模式走。 */
+          zoomEl(document.getElementById('focusPage'), rvZoom, cx, cy);
+          var rw = document.getElementById('ekz-rvWrap');
+          if (rw) zoomEl(rw, rvZoom, cx, cy);
+        }
         try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
       }
     };

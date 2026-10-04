@@ -88,7 +88,7 @@
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
       rec.ts = Date.now();
       clearTimeout(dirtyTimer);
-      dirtyTimer = setTimeout(function () { saveMark(rec); }, 800);
+      dirtyTimer = setTimeout(function () { saveMark(rec); }, 300);
     }
     function flush() { snapshotAll(); clearTimeout(dirtyTimer); dirtyTimer = null; return saveMark(rec); }
     /* 三个出口都挂：移动端 beforeunload 常常不触发 */

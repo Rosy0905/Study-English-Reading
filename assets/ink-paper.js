@@ -19,7 +19,7 @@
   const DPR = () => Math.min(window.devicePixelRatio || 1, 3);
   const K = .6, KP = .35;                                    /* 平滑 */
   const HOLD_MS = 420, HOLD_MOVE_TOL = 8;                    /* 长按变橡皮 */
-  const HL_HOLD_MS = 550, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;  /* 荧光笔拉直 */
+  const HL_HOLD_MS = 450, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;  /* 荧光笔拉直（她嫌略久，调短一丁点） */
 
   function create(opts) {
     let host = opts.host;
@@ -137,9 +137,19 @@
       }
       resize.tries = 0;
       W = w; H = h;
+      /* 【2026-10-04 加】超大页面 + 高 DPR + 深度缩放时，画布 backing store
+         可能超过浏览器单画布像素上限（约 16384px 边 / 2.68 亿像素），
+         超了会静默创建失败，整张画布变空或只显示一截 —— 表现就是
+         "笔迹断节/消失、放大才看到残点"。这里把 DPR 削到不超限，
+         只降分辨率不丢坐标，笔迹位置照样正确。 */
+      let dd = d;
+      const MAX = 16384;
+      if (W * dd > MAX) dd = MAX / W;
+      if (H * dd > MAX) dd = MAX / H;
+      if (dd < 1) dd = 1;
       for (const pair of [[cv, ctx], [lv, lctx]]) {
-        pair[0].width = Math.round(W * d); pair[0].height = Math.round(H * d);
-        pair[1].setTransform(d, 0, 0, d, 0, 0);
+        pair[0].width = Math.max(1, Math.round(W * dd)); pair[0].height = Math.max(1, Math.round(H * dd));
+        pair[1].setTransform(dd, 0, 0, dd, 0, 0);
       }
       redraw(); drawLive();
     }
@@ -191,12 +201,22 @@
     let lastPointerRel = null;
     function fireHold() {
       holdTimer = null;
-      if (!holdStart || !cur) return;
+      if (!holdStart || curId == null) return;
+      /* 【2026-10-04 修】原来这里 cur = {...} 重新赋值了一个新对象，
+         但 onMove 里判断用的是 curs.get(pointerId) 那个槽位里的 mine，
+         mine.tool 没变成 er，于是只有下面这一下 eraseDot 生效，
+         之后移动时的 eraseSegment 分支永远进不去 —— 表现就是
+         "第一笔擦个坑，后面橡皮失效"。现在改成原地改槽位里的对象，
+         让 mine.tool 真正变成 er。 */
+      const mine = curs.get(curId);
+      if (!mine) return;
       holdFired = true;
-      cur = { tool: 'er', color: '#000', size: state.size.er, pts: cur ? cur.pts.slice() : [] };
+      mine.tool = 'er';
+      mine.color = '#000';
+      mine.size = state.size.er;
       lctx.clearRect(0, 0, W, H);
-      if (cur.pts.length) { const last = cur.pts[cur.pts.length - 1]; eraseDot(last, cur.size); }
-      if (lastPointerRel) drawEraserCursor(lastPointerRel.x * W, lastPointerRel.y * H, cur.size);
+      if (mine.pts.length) { const last = mine.pts[mine.pts.length - 1]; eraseDot(last, mine.size); }
+      if (lastPointerRel) drawEraserCursor(lastPointerRel.x * W, lastPointerRel.y * H, mine.size);
       toast('橡皮');
     }
 
