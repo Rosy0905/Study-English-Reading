@@ -24,6 +24,15 @@
   var ROOT = ((me && me.dataset.root) || '../../').replace(/\/?$/, '/');
   if (!PAPER) return;
 
+  /* 尽早挂上平板自检面板（无需 F12）：右下角「自检」按钮，点开看报错与缩放日志 */
+  (function () {
+    try {
+      var d = document.createElement('script');
+      d.src = ROOT + 'assets/ink-debug.js'; d.async = false;
+      document.head.appendChild(d);
+    } catch (_) {}
+  })();
+
   var IS_DO = !!document.getElementById('articleWrap'); /* 做题模式？ */
 
   /* ---------- 样式 ---------- */
@@ -279,6 +288,7 @@
       var slot = 'rv-left-' + asset;
       engine.mountPaper('rv-left', slot, fp, false, rvGz);
       if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
+      syncZoomBtn();
       rvLeftSlot = slot;
       return true;
     }
@@ -460,6 +470,7 @@
             { el: document.getElementById('questionWrap'), slot: 'question', onPinch: gz.onPinch, onPinchStart: gz.onPinchStart }
           ]);
           if (rvZoom > 1) { zoomEl(document.getElementById('articleWrap'), rvZoom); zoomEl(document.getElementById('questionWrap'), rvZoom); }
+          syncZoomBtn();   /* 上次退出时是放大状态进来的，直接把复位按钮亮出来 */
         } else {
           engine = await window.EkzMark.init(PAPER + '-rv', []);
           setupRvFollow();
@@ -602,6 +613,9 @@
     var after = el.getBoundingClientRect();
     var k = after.width / before.width;
     if (!isFinite(k) || k <= 0) return;
+    /* 无锚点（缩放复位按钮调用）：只改宽度，不动滚动。
+       否则 localX = NaN 会把 scrollLeft 设成 NaN，浏览器当 0 处理→ 页面跳到最左上角。 */
+    if (!isFinite(cx) || !isFinite(cy)) return;
     /* 手指在元素自身坐标系里的位置（改宽前，viewport px） */
     var localX = cx - before.left, localY = cy - before.top;
     /* 改完宽度后（还没动滚动条时），那个点跑到了 after.left + localX*k 这个视口位置；
@@ -613,31 +627,74 @@
   }
   function rvGestures() {
     return {
-      onPinchStart: function () { z0 = rvZoom; },
+      onPinchStart: function () { z0 = rvZoom; if (window.__ekzDebug) window.__ekzDebug.log('捏合开始 z0=' + rvZoom.toFixed(2)); },
       onPinch: function (f, cx, cy) {
-        rvZoom = Math.min(3, Math.max(1, z0 * f));
-        /* 只缩放「手指中心命中的那一栏」。
-           之前左右两栏同时缩放、还共用一个手指锚点，双指横跨两栏时两栏互相打架，
-           表现出来就是"照中心缩放却往右上角飘"（做题页）和"手指放大左边、右边在动"（复盘页）。
-           现在按 cx,cy 落在哪个栏的可视区来选目标，只缩那一栏，锚点不再错位。 */
-        var targets = IS_DO
-          ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
-          : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
-        targets = targets.filter(Boolean);
-        var hit = null, best = Infinity;
-        for (var i = 0; i < targets.length; i++) {
-          var el = targets[i];
-          var sc = el.closest('.scroll') || el;
-          var r = sc.getBoundingClientRect();
-          if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
-          var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
-          var d = dx * dx + dy * dy;
-          if (d < best) { best = d; hit = el; }
-        }
-        if (hit) zoomEl(hit, rvZoom, cx, cy);
-        try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
+        try {
+          rvZoom = Math.min(3, Math.max(1, z0 * f));
+          if (window.__ekzDebug) window.__ekzDebug.log('捏合 f=' + f.toFixed(3) + ' → z=' + rvZoom.toFixed(2));
+          /* 只缩放「手指中心命中的那一栏」。
+             之前左右两栏同时缩放、还共用一个手指锚点，双指横跨两栏时两栏互相打架，
+             表现出来就是"照中心缩放却往右上角飘"（做题页）和"手指放大左边、右边在动"（复盘页）。
+             现在按 cx,cy 落在哪个栏的可视区来选目标，只缩那一栏，锚点不再错位。 */
+          var targets = IS_DO
+            ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
+            : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+          targets = targets.filter(Boolean);
+          var hit = null, best = Infinity;
+          for (var i = 0; i < targets.length; i++) {
+            var el = targets[i];
+            var sc = el.closest('.scroll') || el;
+            var r = sc.getBoundingClientRect();
+            if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
+            var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
+            var d = dx * dx + dy * dy;
+            if (d < best) { best = d; hit = el; }
+          }
+          if (hit) {
+            try { zoomEl(hit, rvZoom, cx, cy); }
+            catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('zoomEl 异常: ' + e); }
+          }
+          try { localStorage.setItem('ekz-zoom-' + PAPER, String(rvZoom)); } catch (_) {}
+          syncZoomBtn();
+        } catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('onPinch 异常: ' + e); }
       }
     };
+  }
+
+  /* ---------- 缩放复位按钮（2026-10-04）----------
+     平板双指捏合偶尔会把比例卡在中途（她反馈"放大后缩不回来"）。
+     根因待平板日志确认，但不该让她卡在放大状态出不来，
+     所以给一个显式出口：只要缩过就浮出按钮，点一下回到 100%。
+     捏合在 rvGestures.onPinch 里同步刷新按钮显示。 */
+  var zoomBtn = null;
+  function syncZoomBtn() {
+    if (rvZoom > 1.02) {
+      if (!zoomBtn && document.body) {
+        zoomBtn = document.createElement('button');
+        zoomBtn.type = 'button';
+        zoomBtn.textContent = '复位 100%';
+        zoomBtn.style.cssText = 'position:fixed;right:10px;bottom:56px;z-index:2147483000;'
+          + 'border:1.5px solid #b9a1e6;border-radius:9px;background:#fff;color:#5a3f96;'
+          + 'padding:8px 12px;font-size:13px;line-height:1.2;cursor:pointer;font-family:inherit;'
+          + 'box-shadow:0 2px 10px rgba(90,63,150,.22);user-select:none;-webkit-user-select:none;'
+          + 'touch-action:manipulation';
+        zoomBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); resetZoom(); });
+        document.body.appendChild(zoomBtn);
+      }
+      if (zoomBtn) zoomBtn.style.display = '';
+    } else if (zoomBtn) {
+      zoomBtn.style.display = 'none';
+    }
+  }
+  function resetZoom() {
+    rvZoom = 1; z0 = 1;
+    var targets = IS_DO
+      ? [document.getElementById('articleWrap'), document.getElementById('questionWrap')]
+      : [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+    targets.filter(Boolean).forEach(function (el) { try { zoomEl(el, 1); } catch (_) {} });
+    try { localStorage.setItem('ekz-zoom-' + PAPER, '1'); } catch (_) {}
+    syncZoomBtn();
+    if (window.__ekzDebug) window.__ekzDebug.log('缩放已手动复位到 100%');
   }
 
   /* ---------- 启动：迁移旧数据 + 默认进入批注模式 ---------- */

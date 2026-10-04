@@ -19,7 +19,9 @@
   const DPR = () => Math.min(window.devicePixelRatio || 1, 3);
   const K = .6, KP = .35;                                    /* 平滑 */
   const HOLD_MS = 420, HOLD_MOVE_TOL = 8;                    /* 长按变橡皮 */
-  const HL_HOLD_MS = 450, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;  /* 荧光笔拉直（她嫌略久，调短一丁点） */
+  /* 拉直：仅钢笔在明显停顿（1s）后自动拉直，避免画到一半被削成直线。
+     荧光笔不再自动拉直——下划线途中稍一停顿就被替换成直线，正是"画不全/部分消失"的元凶。 */
+  const HL_HOLD_MS = 1000, HL_MOVE_TOL = 3, HL_MIN_LEN = 15;
 
   function create(opts) {
     let host = opts.host;
@@ -186,8 +188,8 @@
       hlHoldTimer = setInterval(checkHlStraighten, 50);
     }
     function checkHlStraighten() {
-      /* 钢笔和荧光笔同一套拉直（她要求手感一致） */
-      if (!cur || (cur.tool !== 'hl' && cur.tool !== 'pen') || hlStraightened) { stopHlHold(); return; }
+      /* 仅钢笔拉直；荧光笔不参与，避免下划线被削成直线（她反馈"画不全/部分消失"） */
+      if (!cur || cur.tool !== 'pen' || hlStraightened) { stopHlHold(); return; }
       if (performance.now() - lastMoveTs < HL_HOLD_MS) return;
       const P = cur.pts; if (P.length < 2) return;
       const start = P[0], end = hlMoveAnchor || P[P.length - 1];
@@ -248,6 +250,11 @@
       smoothSaved.forEach(function (sc) { sc.style.scrollBehavior = ''; });
       smoothSaved.clear();
     }
+    /* 页面切后台/卸载时清空手势状态，避免残留捕获或卡死的多指状态带到下次进入 */
+    addEventListener('pagehide', gestureCleanup);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') gestureCleanup();
+    });
     function rel(e) {
       const r = cv.getBoundingClientRect();
       const w = r.width || host.clientWidth, h = r.height || host.clientHeight;
@@ -283,7 +290,7 @@
           const p = [...touches.values()];
           pinch0 = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1, cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2 };
           panLast = null;
-          if (opts.onPinchStart) opts.onPinchStart();
+          try { if (opts.onPinchStart) opts.onPinchStart(); } catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('onPinchStart: ' + e); }
         }
         return;
       }
@@ -305,7 +312,7 @@
         holdStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
         clearTimeout(holdTimer); holdTimer = setTimeout(fireHold, HOLD_MS);
       }
-      if (state.tool === 'hl' || state.tool === 'pen') startHlHold();
+      if (state.tool === 'pen') startHlHold();
       syncTouchAction();
     };
     cv.addEventListener('pointerdown', onDown);
@@ -322,7 +329,8 @@
         } else if (touches.size >= 2 && pinch0 && opts.onPinch) {
           const p = [...touches.values()];
           const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-          opts.onPinch(d / pinch0.d, pinch0.cx, pinch0.cy);
+          try { opts.onPinch(d / pinch0.d, pinch0.cx, pinch0.cy); }
+          catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('onPinch: ' + e); }
         }
         return;
       }
@@ -380,6 +388,8 @@
     };
     cv.addEventListener('pointermove', onMove);
     function endPointer(e) {
+      /* 抬笔/取消时立刻释放指针捕获，避免平板残留捕获把后续触摸全吃掉（表现为"动不了"） */
+      if (e && e.pointerId != null) { try { cv.releasePointerCapture(e.pointerId); } catch (_) {} }
       /* ---- 手势收尾 ---- */
       if (e && e.pointerType === 'touch' && touches.has(e.pointerId)) {
         touches.delete(e.pointerId);

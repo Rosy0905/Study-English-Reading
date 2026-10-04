@@ -83,22 +83,64 @@
     /* 全局时间线撤销/重做栈（修复多纸张各自独立栈导致的清空撤销混乱） */
     const undoLog = [], redoLog = [];
 
+    /* ---- localStorage 同步备份（针对"平板刷新后钢笔消失"）----
+       IndexedDB 写入是异步事务：桌面快、通常能在卸载前提交，平板慢，
+       刷新/切页时未提交的事务会被浏览器直接掐断 → 笔迹没了。
+       localStorage.setItem 是同步的，返回即落盘，卸载抢不走。
+       于是每落一笔同时写一份轻量备份；载入时若 IndexedDB 里笔数
+       比备份少（说明主库那笔丢了），用备份补回来。笔迹是归一化坐标，
+       一页几十 KB，远在 localStorage 容量内。 */
+    const BK = 'ekz-ink-bk-' + recId + '-';
+    function writeBackup(slot, arr) {
+      try { localStorage.setItem(BK + slot, JSON.stringify(arr)); }
+      catch (e) { if (window.__ekzDebug) window.__ekzDebug.err('备份写不下(容量): ' + (e && e.name)); }
+    }
+    function readBackup(slot) {
+      try {
+        var raw = localStorage.getItem(BK + slot);
+        if (!raw) return null;
+        var a = JSON.parse(raw);
+        return Array.isArray(a) ? a : null;
+      } catch (_) { return null; }
+    }
+    function loadSlot(slot) {
+      var arr = rec.marks[slot] || (rec.marks[slot] = []);
+      var bk = readBackup(slot);
+      /* 主库比备份少 → 说明有笔在平板上没存进 IndexedDB，用备份兜回来 */
+      if (bk && bk.length > arr.length) {
+        arr.length = 0;
+        bk.forEach(function (s) { arr.push(s); });
+        if (window.__ekzDebug) window.__ekzDebug.log('从备份恢复 ' + slot + '：' + bk.length + ' 笔');
+      }
+      arr.forEach(normStroke);
+      return arr;
+    }
+
     function snapshotAll() {
       for (const k in papers) {
         const p = papers[k];
-        if (p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
+        if (p.paper) {
+          rec.marks[p.slot] = p.paper.strokes.slice();
+          writeBackup(p.slot, rec.marks[p.slot]);
+        }
       }
     }
     function markDirty(key) {
       const p = papers[key];
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
       rec.ts = Date.now();
+      /* 同步备份先落盘（ unload 抢不走 ），再异步写主库。 */
+      if (p && p.paper) writeBackup(p.slot, rec.marks[p.slot]);
       /* 每完成一笔立刻落盘，不再用 300ms 防抖。
          原因：刷新/切页时旧逻辑靠 beforeunload/pagehide 的异步事务保存，
          移动端和一部分桌面浏览器会在页面卸载前掐断该事务，笔迹因此丢失
          （用户实测：电脑与平板刷新后笔迹消失）。改为每笔立即写入 IndexedDB，
          刷新前一刻数据早已在库里，彻底规避异步落盘被中断的问题。 */
-      saveMark(rec).catch(function () {});
+      saveMark(rec).then(function () {
+        if (window.__ekzDebug) window.__ekzDebug.log('保存成功 slot=' + key + ' 笔数=' + (rec.marks[p.slot] ? rec.marks[p.slot].length : 0));
+      }).catch(function (e) {
+        if (window.__ekzDebug) window.__ekzDebug.err('保存失败 slot=' + key + ' : ' + (e && e.message ? e.message : e));
+      });
     }
     function flush() { snapshotAll(); clearTimeout(dirtyTimer); dirtyTimer = null; return saveMark(rec); }
     /* 三个出口都挂：移动端 beforeunload 常常不触发 */
@@ -122,8 +164,7 @@
       }
       if (!host) return p;
       if (!p.paper) {
-        const arr = rec.marks[p.slot] || (rec.marks[p.slot] = []);
-        arr.forEach(normStroke);
+        const arr = loadSlot(p.slot);
         p.paper = window.EkzInkPaper.create({
           host: host, strokes: arr, state: state,
           toast: opts.toast, readonly: p.readonly,
@@ -148,9 +189,9 @@
       const p = papers[key];
       if (!p || !p.paper || p.slot === slot) return;
       rec.marks[p.slot] = p.paper.strokes.slice();
+      writeBackup(p.slot, rec.marks[p.slot]);
       p.paper.strokes.length = 0;
-      const arr = rec.marks[slot] || (rec.marks[slot] = []);
-      arr.forEach(normStroke);
+      const arr = loadSlot(slot);
       arr.forEach(function (s2) { p.paper.strokes.push(s2); });
       p.slot = slot;
       undoLog.length = 0; redoLog.length = 0;  /* 切步骤=新上下文，清空全局撤销/重做栈 */
