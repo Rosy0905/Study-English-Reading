@@ -203,10 +203,10 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js?v=20261004n"></script>
-<script src="assets/ekz-export.js?v=20261004n"></script>
-<script src="assets/ekz-pdf.js?v=20261004n"></script>
-<script src="manifest.js?v=20261004n"></script>
+<script src="assets/ekz-db.js?v=20261004o"></script>
+<script src="assets/ekz-export.js?v=20261004o"></script>
+<script src="assets/ekz-pdf.js?v=20261004o"></script>
+<script src="manifest.js?v=20261004o"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
@@ -656,8 +656,24 @@ function wipeAllData(){
       return closeNotesDB();
     })
     .then(()=>{
+      /* 【2026-10-04 关键修复】ekzDB.destroy() 返回的是 Promise<boolean>，
+         blocked 时它 resolve(false) —— 不是 reject、也不是 throw。
+         原来这里只 `return window.ekzDB.destroy(name)`，把返回值**整个丢掉**，
+         于是 blocked 既没算成功（stat.db 不加）也没算失败（stat.dbFailed 不加），
+         静默消失。结果就是她反馈的"清空全部数据是无效的，也没有清空"：
+         界面照跑、toast 照弹，但一个库都没删掉。
+         实测（scripts/cdp-stale-conn.js 双标签页）：
+           清空返回 {"notes":1,"marks":189,"db":0,"dbFailed":[]}
+           —— 读到了 189 笔，db=0（没删成），dbFailed=[]（也没报失败）。
+         现在必须接住返回值：false 一律记进 dbFailed，让 toast 如实说"没删掉"。 */
       const del=name=>{
-        if(window.ekzDB&&window.ekzDB.destroy)return window.ekzDB.destroy(name);
+        if(window.ekzDB&&window.ekzDB.destroy){
+          return Promise.resolve(window.ekzDB.destroy(name)).then(ok=>{
+            if(ok){stat.db++;return;}
+            /* false = 被其他标签页的连接挡住，没删掉 —— 如实记账 */
+            stat.dbFailed.push(name);
+          }).catch(e=>{stat.dbFailed.push(name+'('+(e&&e.message||e)+')');});
+        }
         return new Promise(res=>{
           let r;
           try{r=indexedDB.deleteDatabase(name);}catch(e){stat.dbFailed.push(name);res();return;}
