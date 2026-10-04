@@ -94,9 +94,11 @@
     function redraw() {
       ctx.clearRect(0, 0, W, H);
       if (state.hidden) return;
-      for (const s of strokes) if (s.tool === 'hl') stroke(ctx, s);
-      for (const s of strokes) if (s.tool === 'pen') stroke(ctx, s);
-      for (const s of strokes) if (s.tool === 'er') stroke(ctx, s);
+      /* 每条单独 try：某条笔迹数据若异常（如坐标 NaN / pts 损坏），
+         只跳过那一条，不让它把整张画布的重绘拖崩导致"全部消失/断节"。 */
+      for (const s of strokes) if (s.tool === 'hl') { try { stroke(ctx, s); } catch (_) {} }
+      for (const s of strokes) if (s.tool === 'pen') { try { stroke(ctx, s); } catch (_) {} }
+      for (const s of strokes) if (s.tool === 'er') { try { stroke(ctx, s); } catch (_) {} }
     }
     function drawLive() {
       lctx.clearRect(0, 0, W, H);

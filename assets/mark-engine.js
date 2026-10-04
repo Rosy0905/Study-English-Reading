@@ -87,8 +87,12 @@
       const p = papers[key];
       if (p && p.paper) rec.marks[p.slot] = p.paper.strokes.slice();
       rec.ts = Date.now();
-      clearTimeout(dirtyTimer);
-      dirtyTimer = setTimeout(function () { saveMark(rec); }, 300);
+      /* 每完成一笔立刻落盘，不再用 300ms 防抖。
+         原因：刷新/切页时旧逻辑靠 beforeunload/pagehide 的异步事务保存，
+         移动端和一部分桌面浏览器会在页面卸载前掐断该事务，笔迹因此丢失
+         （用户实测：电脑与平板刷新后笔迹消失）。改为每笔立即写入 IndexedDB，
+         刷新前一刻数据早已在库里，彻底规避异步落盘被中断的问题。 */
+      saveMark(rec).catch(function () {});
     }
     function flush() { snapshotAll(); clearTimeout(dirtyTimer); dirtyTimer = null; return saveMark(rec); }
     /* 三个出口都挂：移动端 beforeunload 常常不触发 */
@@ -189,10 +193,19 @@
       p.paper.redraw(); markDirty(p.key); return true;
     }
     function clearActive() {
-      const p = activeEntry(); if (!p || !p.paper || !p.paper.strokes.length) return false;
-      p.undoStack.push({ t: 'clear', s: p.paper.strokes.splice(0) });
-      p.redoStack.length = 0;
-      p.paper.redraw(); markDirty(p.key); return true;
+      /* 清空所有已挂载纸张的笔迹（文章页 / 题目页 / 复盘左右栏等）。
+         之前只清 activeEntry() 选中的那一张，而刷新后 activeKey 为空、
+         activeEntry 会回退到第一张（通常是空的文章页），于是"点清空清不掉"，
+         得再画一笔激活对应纸张才能清掉。现在统一清空全部，符合"清空=清掉我的批注"的预期。 */
+      let any = false;
+      for (const k in papers) {
+        const p = papers[k];
+        if (!p || !p.paper || !p.paper.strokes.length) continue;
+        p.undoStack.push({ t: 'clear', s: p.paper.strokes.splice(0) });
+        p.redoStack.length = 0;
+        p.paper.redraw(); markDirty(k); any = true;
+      }
+      return any;
     }
     function hasInk() {
       for (const k in papers) if (papers[k].paper && papers[k].paper.strokes.length) return true;
