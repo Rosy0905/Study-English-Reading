@@ -244,6 +244,8 @@
   /* 复盘：左右两张纸 —— 左栏真题图（跟图走，同图同笔迹、换图换新笔记）
      + 右栏解析（每一步各自一份）。顶栏按钮切阅读模式。 */
   var rvObs = null, rvLeftSlot = null, rvRightSlot = null, rvStepIdx = 1;
+  /* 【2026-10-05】右栏锁宽：右栏一旦有笔记就冻结内容宽度（见 rvMaybeLockRight） */
+  var rvRightWrap = null, rvRightLockW = 0;
 
   function rvAsset() {
     var fp = document.getElementById('focusPage');
@@ -252,6 +254,9 @@
   }
 
   function setupRvFollow() {
+    /* 【2026-10-05】右栏"画过笔记就锁宽"：先把上次保存的锁宽读出来，
+       右栏有笔记时冻结内容宽度，拖分隔条只动栏外留白、不再回流文字（rvMaybeLockRight）。 */
+    try { var _lw = parseInt(localStorage.getItem('ekz-rv-rvlock') || '0', 10); if (_lw > 0 && !rvRightLockW) rvRightLockW = _lw; } catch (_) {}
     /* 右栏解析：把 rightContent 包进自己的容器，画布盖在上面 */
     var scroll = document.getElementById('rightScroll') ||
       document.querySelector('.rightPanel > .scroll');
@@ -265,6 +270,8 @@
       wrapEl.appendChild(content);
       engine.mountPaper('rv-right', 'rv-right-step-' + rvStepIdx, wrapEl, false, rvGz);
       rvRightSlot = 'rv-right-step-' + rvStepIdx;
+      rvRightWrap = wrapEl;
+      rvMaybeLockRight();
     }
 
     /* 左栏：作者每步重建 focusPage，观察到就挂画布、按图切笔迹层 */
@@ -286,7 +293,12 @@
       if (lp.hidden) lp.hidden = false;
       var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
       var slot = 'rv-left-' + asset;
+      /* 重新挂到新 focusPage（复盘页每步 render 会重建该节点）；paper 已存在则只重 attach */
       engine.mountPaper('rv-left', slot, fp, false, rvGz);
+      /* 素材类型变了 → 真正切换笔迹层（旧层存盘、载入新层）。
+         真题词汇标注与真题页是两层独立笔记，互不再串内容（修残留 bug）。
+         同类型不同页只重 attach、不切层，笔记跟着该素材类型走。 */
+      if (rvLeftSlot && rvLeftSlot !== slot) engine.setSlot('rv-left', slot);
       if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
       syncZoomBtn();
       rvLeftSlot = slot;
@@ -324,6 +336,7 @@
       rvStepIdx = n;
       engine.setSlot('rv-right', 'rv-right-step-' + n);
       rvRightSlot = 'rv-right-step-' + n;
+      rvMaybeLockRight();
     }
     if (progress) {
       var stepObs = new MutationObserver(function () {
@@ -335,6 +348,33 @@
          观察器只认"变化"，不主动读一次就会停在 step-1 那个空层上。 */
       syncRvStep();
     }
+  }
+
+  /* 【2026-10-05】右栏锁宽逻辑：右栏有笔记就把内容宽度冻成当前宽度；
+     之后拖分隔条改的是 grid 列宽、右栏内容（文字+画布）宽度不变 → 文字不回流、笔迹永远对齐。
+     窄于此宽度时给右栏容器开横向滚动，避免笔记被裁掉。右栏没笔记时退回自适应。 */
+  function rvMaybeLockRight() {
+    if (!rvRightWrap || !engine) return;
+    var st = engine.inkStats('rv-right');
+    var hasInk = st && st.strokes;
+    if (!hasInk) {
+      if (rvRightLockW) {
+        rvRightLockW = 0;
+        rvRightWrap.style.width = '';
+        var _sc0 = document.getElementById('rightScroll');
+        if (_sc0) _sc0.style.overflowX = '';
+        try { localStorage.removeItem('ekz-rv-rvlock'); } catch (_) {}
+      }
+      return;
+    }
+    if (!rvRightLockW) {
+      rvRightLockW = Math.round(rvRightWrap.getBoundingClientRect().width) || rvRightWrap.clientWidth;
+      if (rvRightLockW > 0) { try { localStorage.setItem('ekz-rv-rvlock', String(rvRightLockW)); } catch (_) {} }
+    }
+    var _w = rvRightLockW + 'px';
+    if (rvRightWrap.style.width !== _w) rvRightWrap.style.width = _w;
+    var _sc = document.getElementById('rightScroll');
+    if (_sc && _sc.style.overflowX !== 'auto') _sc.style.overflowX = 'auto';
   }
 
   /* 复盘页右栏在各版本模板里写法不同，逐级兜底。
@@ -382,6 +422,7 @@
       }
       rvSplit.addEventListener('pointerdown', function (e) {
         if (innerWidth <= 1100 || lp.hidden) return;
+        rvMaybeLockRight();
         rvSplit.classList.add('drag');
         /* 关掉网格过渡动画，分隔线才追得上鼠标 */
         layoutEl.style.transition = 'none';
@@ -408,6 +449,7 @@
       });
     }
     placeRvSplit = function () {
+      rvMaybeLockRight();
       /* 单页模式（方法总览这类）绝不能套两栏内联样式，否则内容掉进左栏格 */
       if (lp.hidden || /\bsingle\b/.test(layoutEl.className)) {
         if (layoutEl.style.gridTemplateColumns) layoutEl.style.gridTemplateColumns = '';
@@ -692,21 +734,18 @@
             ], cx, cy);
             isArt = (hit && hit.id === 'articleWrap');
           } else {
-            /* 复盘页确实是左中右并排，按横向命中判定（保持原逻辑） */
+            /* 【2026-10-05】复盘缩放只保留左栏（真题底图）。
+               右栏是解析文字，捏合缩放会触发文字回流、笔迹跑位（和拖分隔条同病），
+               且她不急需右栏缩放、分隔条已够用。所以移除右栏 ekz-rvWrap 的缩放，
+               只认 focusPage（左栏底图）。捏合落在左栏才缩放，落在右栏不再响应。 */
             rvZoom = Math.min(3, Math.max(1, z0 * f));
-            var targets = [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
-            targets = targets.filter(Boolean);
-            var best = Infinity;
-            for (var i = 0; i < targets.length; i++) {
-              var el = targets[i];
-              var sc = el.closest('.scroll') || el;
+            var fp = document.getElementById('focusPage');
+            if (fp) {
+              var sc = fp.closest('.scroll') || fp;
               var r = sc.getBoundingClientRect();
-              if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { hit = el; break; }
-              var dx = Math.max(r.left - cx, cx - r.right, 0), dy = Math.max(r.top - cy, cy - r.bottom, 0);
-              var d = dx * dx + dy * dy;
-              if (d < best) { best = d; hit = el; }
+              if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) hit = fp;
             }
-            if (window.__ekzDebug) window.__ekzDebug.log('→ 复盘 z=' + rvZoom.toFixed(2));
+            if (window.__ekzDebug) window.__ekzDebug.log('→ 复盘 z=' + rvZoom.toFixed(2) + (hit ? ' (左栏)' : ' (右栏不缩放)'));
           }
           /* 做题页：只改被捏中的那一页，另一页保持原比例 */
           if (IS_DO) {
@@ -761,7 +800,7 @@
     } else {
       rvZoom = 1; z0 = 1;
       try { localStorage.setItem('ekz-zoom-' + PAPER, '1'); } catch (_) {}
-      targets = [document.getElementById('focusPage'), document.getElementById('ekz-rvWrap')];
+      targets = [document.getElementById('focusPage')];
     }
     targets.filter(Boolean).forEach(function (el) { try { zoomEl(el, 1); } catch (_) {} });
     syncZoomBtn();
