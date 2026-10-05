@@ -1,17 +1,7 @@
-# 备份目录不上库
-.backups/
-# 调试中间产物（对比图、探针截图），随时可重新生成
-.probe/
 # Python 缓存
 __pycache__/
 # 系统垃圾
 Thumbs.db
 Desktop.ini
 .DS_Store
-# 本地状态文件（记录上次备份路径等，只这台机器有意义）
-.lastA
-.last-backup-path
 _test/
-
-# 临时备份目录（改动前的逐字节备份，本机留存不上库）
-_backup_*/
