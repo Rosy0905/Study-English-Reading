@@ -106,7 +106,13 @@
          这样调了浓度以后，旧笔不会被重新染色。 */
       else if (s.tool === 'hl') { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = (typeof s.a === 'number') ? s.a : hlAlpha(); }
       else { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = 1; }
-      if (P.length === 1) { c.beginPath(); c.arc(P[0].x, P[0].y, s.size / 2, 0, 7); c.fill(); c.restore(); return; }
+      if (P.length === 1) {
+        c.beginPath();
+        /* 荧光笔起笔顿点也画方（矩形），和方角线条一致；钢笔/橡皮保留圆点 */
+        if (s.tool === 'hl') { const r = s.size / 2; c.rect(P[0].x - r, P[0].y - r, s.size, s.size); }
+        else { c.arc(P[0].x, P[0].y, s.size / 2, 0, 7); }
+        c.fill(); c.restore(); return;
+      }
       if (s.tool === 'pen') {
         let px = P[0].x, py = P[0].y, pp = P[0].p;
         for (let i = 1; i < P.length - 1; i++) {
