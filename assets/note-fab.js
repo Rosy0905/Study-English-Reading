@@ -249,7 +249,9 @@
 
   function rvAsset() {
     var fp = document.getElementById('focusPage');
-    if (!fp) return null;
+    if (!fp) {
+      return document.querySelector('#leftStage .newtypePaper') ? 'newtype' : null;
+    }
     return fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
   }
 
@@ -287,19 +289,32 @@
        注册完立刻主动调一次，之后观察器只负责后续步骤的重建。 */
     function syncRvLeft() {
       if (!engine) return false;
+      /* 左栏素材有三种：词汇标注(图片, focusPage.annotatedPdfPage) /
+         真题页(图片, focusPage) / 新题型文本结构(纯文本, #leftStage .newtypePaper)。
+         原来强制要求 focusPage 含 img 才挂画布，新题型没 img 直接被挡 → 写不了字。
+         现改为：有 focusPage 挂 focusPage，无则挂 newtypePaper，二者都能批注。 */
       var fp = document.getElementById('focusPage');
+      var np = (!fp) ? document.querySelector('#leftStage .newtypePaper') : null;
+      var hostEl = fp || np;
       var lp = document.getElementById('leftPanel');
-      if (!fp || !fp.querySelector('img') || !lp) return false;
+      if (!hostEl || !lp) return false;
       if (lp.hidden) lp.hidden = false;
-      var asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
+      /* 素材类型：词汇标注 / 真题页 / 新题型，各自独立一层，笔记钉在对应素材上不串。
+         新题型内部再按题型二分：小标题题(newtype-smallTitle) / 排序题(newtype-sorting) 各一层互不串。
+         用 qblock 的 data-q / data-letter 区分，无需改各篇 html。 */
+      var asset;
+      if (!fp) {
+        asset = np.querySelector('[data-letter]') ? 'newtype-sorting' : 'newtype-smallTitle';
+      } else {
+        asset = fp.classList.contains('annotatedPdfPage') ? 'annotated' : 'questions';
+      }
       var slot = 'rv-left-' + asset;
-      /* 重新挂到新 focusPage（复盘页每步 render 会重建该节点）；paper 已存在则只重 attach */
-      engine.mountPaper('rv-left', slot, fp, false, rvGz);
-      /* 素材类型变了 → 真正切换笔迹层（旧层存盘、载入新层）。
-         真题词汇标注与真题页是两层独立笔记，互不再串内容（修残留 bug）。
+      /* 重新挂到新宿主（复盘页每步 render 会重建该节点）；paper 已存在则只重 attach */
+      engine.mountPaper('rv-left', slot, hostEl, false, rvGz);
+      /* 素材类型变了 → 真正切换笔迹层（旧层存盘、载入新层），互不再串内容。
          同类型不同页只重 attach、不切层，笔记跟着该素材类型走。 */
       if (rvLeftSlot && rvLeftSlot !== slot) engine.setSlot('rv-left', slot);
-      if (rvZoom > 1) zoomEl(fp, rvZoom);   /* 换步骤重建后重放缩放 */
+      if (rvZoom > 1) zoomEl(hostEl, rvZoom);   /* 换步骤重建后重放缩放 */
       syncZoomBtn();
       rvLeftSlot = slot;
       return true;
