@@ -107,11 +107,9 @@
       else if (s.tool === 'hl') { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = (typeof s.a === 'number') ? s.a : hlAlpha(); }
       else { c.globalCompositeOperation = 'source-over'; c.strokeStyle = c.fillStyle = s.color; c.globalAlpha = 1; }
       if (P.length === 1) {
-        c.beginPath();
-        /* 荧光笔起笔顿点也画方（矩形），和方角线条一致；钢笔/橡皮保留圆点 */
-        if (s.tool === 'hl') { const r = s.size / 2; c.rect(P[0].x - r, P[0].y - r, s.size, s.size); }
-        else { c.arc(P[0].x, P[0].y, s.size / 2, 0, 7); }
-        c.fill(); c.restore(); return;
+        /* 荧光笔落笔顿点不绘制：单点时不冒方块/圆点，移动出线后才是方角线，避免落笔闪顿点 */
+        if (s.tool === 'hl') { c.restore(); return; }
+        c.beginPath(); c.arc(P[0].x, P[0].y, s.size / 2, 0, 7); c.fill(); c.restore(); return;
       }
       if (s.tool === 'pen') {
         let px = P[0].x, py = P[0].y, pp = P[0].p;
@@ -620,6 +618,9 @@
     /* pointerleave 也要带上 pointerId，否则多指时不知道该收哪一根 */
     const onLeave = e => { if (curs.has(e.pointerId)) endPointer(e); };
     cv.addEventListener('pointerleave', onLeave);
+    /* 【2026-10-05】批注态拦截右键菜单：手写笔长按偶尔会唤起系统上下文菜单（也带震动），
+       批注模式下直接吞掉；阅读态（editing=false）画布 pointer-events:none，右键落文字不受影响。 */
+    cv.addEventListener('contextmenu', e => { if (editing) e.preventDefault(); });
 
     /* 导出：白底 + 容器里的底图（如果有）+ 笔迹；橡皮只擦笔迹不擦底图 */
     function exportCanvas() {
@@ -662,6 +663,20 @@
         editing = !!on;
         syncTouchAction();
         cv.style.pointerEvents = (on && !readonly) ? 'auto' : 'none';
+        /* 【2026-10-05】批注模式禁选文字：右栏解析 / 真题文字在批注时长按会被系统当成
+           选字、触发触感震动（阅读模式复制粘贴的手感）。批注态给 host 加 user-select:none
+           彻底禁选，事件穿透也不震；阅读态（on=false）移除恢复可选可复制。
+           笔记页无阅读按钮 → 永远批注态 → 永远禁选（符合题意）。
+           mark-engine.setEditing 已遍历所有 paper 派发，笔记页 / 做题页真题 / 复盘左右栏统一生效。 */
+        if (on && !readonly) {
+          host.style.userSelect = 'none';
+          host.style.webkitUserSelect = 'none';
+          host.style.webkitTouchCallout = 'none';
+        } else {
+          host.style.userSelect = '';
+          host.style.webkitUserSelect = '';
+          host.style.webkitTouchCallout = '';
+        }
       },
       clearLive() { lctx.clearRect(0, 0, W, H); curs.clear(); pickMain(); },
       /* 【2026-10-03 补】原来只把两个 canvas 从 DOM 摘掉就算完事，
