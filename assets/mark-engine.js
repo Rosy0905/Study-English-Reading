@@ -102,8 +102,36 @@
        她反馈的"导入不覆盖、荧光笔复活"就是这条。
        现在改比时间戳：新备份比主库新才恢复，主库更新就以主库为准。 */
     const BKTS = 'ekz-ink-bkts-' + recId + '-';
+    /* 【2026-10-05 LRU 备份】只保留最近写的几篇备份，防止 localStorage 被所有篇累计挤爆
+       （尤其同 origin 下经济学项目也全 localStorage 储存、共享同一个 5MB）。
+       每篇的备份只在"正在写/刚写过"时有意义——老篇笔记已在 IndexedDB 主库存好，
+       备份只是给平板"刚写完就秒关页面、最后几笔没提交"做兜底，老篇不需要备份。
+       LRU 按 recId（篇）淘汰：当前篇置顶，超出 MAX_KEEP 的最旧篇整篇备份删掉。
+       只删 ekz-ink-bk-* / ekz-ink-bkts-* 前缀，绝不碰经济学项目的 micro_recite_* 等 key。 */
+    const BK_LRU_KEY = 'ekz-ink-bk-lru';
+    const BK_MAX_KEEP = 3;
+    function evictOldBackups() {
+      try {
+        var order = JSON.parse(localStorage.getItem(BK_LRU_KEY) || '[]');
+        if (!Array.isArray(order)) order = [];
+        var i = order.indexOf(recId);
+        if (i > -1) order.splice(i, 1);
+        order.unshift(recId);
+        while (order.length > BK_MAX_KEEP) {
+          var old = order.pop();
+          if (!old) break;
+          var p1 = 'ekz-ink-bk-' + old + '-', p2 = 'ekz-ink-bkts-' + old + '-';
+          for (var j = localStorage.length - 1; j >= 0; j--) {
+            var k = localStorage.key(j);
+            if (k && (k.indexOf(p1) === 0 || k.indexOf(p2) === 0)) localStorage.removeItem(k);
+          }
+        }
+        try { localStorage.setItem(BK_LRU_KEY, JSON.stringify(order)); } catch (_) {}
+      } catch (_) {}
+    }
     function writeBackup(slot, arr) {
       try {
+        evictOldBackups();   /* 先淘汰最旧篇腾空间，再写当前篇，避免满时写不进 */
         localStorage.setItem(BK + slot, JSON.stringify(arr));
         localStorage.setItem(BKTS + slot, String(Date.now()));
       }

@@ -95,7 +95,12 @@
       const P0 = s.pts;
       if (!P0 || !P0.length) return;
       const P = P0.map(q => ({ x: q.x * W, y: q.y * H, p: q.p === undefined ? .5 : q.p }));
-      c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+      c.save();
+      /* 【2026-10-05】荧光笔改方角：butt 端点（两头平切）+ miter 拐角（更像真实马克笔、
+         起止与拐角更准），miterLimit 收小避免急转弯时尖刺过长。钢笔/橡皮保持圆角。
+         只改荧光笔这一支的描边样式，不动存储、撤销、浓度按笔生效等任何逻辑。 */
+      if (s.tool === 'hl') { c.lineCap = 'butt'; c.lineJoin = 'miter'; c.miterLimit = 2; }
+      else { c.lineCap = 'round'; c.lineJoin = 'round'; }
       if (s.tool === 'er') { c.globalCompositeOperation = 'destination-out'; c.strokeStyle = c.fillStyle = '#000'; c.globalAlpha = 1; }
       /* 浓度优先取这笔自己记录的 a（写笔时存），没有才用当前设置。
          这样调了浓度以后，旧笔不会被重新染色。 */
@@ -426,6 +431,7 @@
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') gestureCleanup();
     });
+    const q4 = v => Math.round(v * 1e4) / 1e4;   /* 落点坐标量化到 4 位小数：体积砍约 30%，画质无感（≤0.09px） */
     function rel(e) {
       const r = cv.getBoundingClientRect();
       const w = r.width || host.clientWidth, h = r.height || host.clientHeight;
@@ -435,7 +441,7 @@
       if (!(w > 0) || !(h > 0)) return null;
       const x = (e.clientX - r.left) / w, y = (e.clientY - r.top) / h;
       if (!isFinite(x) || !isFinite(y)) return null;
-      return { x: x, y: y, p: (e.pressure > .01 && e.pressure <= 1) ? e.pressure : .5 };
+      return { x: q4(x), y: q4(y), p: q4((e.pressure > .01 && e.pressure <= 1) ? e.pressure : .5) };
     }
     function canDraw(e) {
       if (e.pointerType === 'touch') return state.finger;
@@ -532,7 +538,7 @@
         let x = raw.x, y = raw.y, p = raw.p;
         if (L) { x = L.x + (raw.x - L.x) * K; y = L.y + (raw.y - L.y) * K; p = L.p + (raw.p - L.p) * KP; }
         if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) {
-          const np = { x, y, p };
+          const np = { x: q4(x), y: q4(y), p: q4(p) };
           if (L) eraseSegment(L, np, mine.size); else eraseDot(np, mine.size);
           mine.pts.push(np);
         }
@@ -548,13 +554,13 @@
         }
       }
       if (isMain && (mine.tool === 'hl' || mine.tool === 'pen') && hlStraightened) {
-        mine.pts = [mine.pts[0], { x: raw.x, y: raw.y, p: raw.p }];
+        mine.pts = [mine.pts[0], { x: q4(raw.x), y: q4(raw.y), p: q4(raw.p) }];
         drawLive(); return;
       }
       const L = mine.pts[mine.pts.length - 1];
       let x = raw.x, y = raw.y, p = raw.p;
       if (L) { x = L.x + (raw.x - L.x) * K; y = L.y + (raw.y - L.y) * K; p = L.p + (raw.p - L.p) * KP; }
-      if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) { mine.pts.push({ x, y, p }); }
+      if (!L || Math.abs(x - L.x) >= .0004 || Math.abs(y - L.y) >= .0004) { mine.pts.push({ x: q4(x), y: q4(y), p: q4(p) }); }
       drawLive();
     };
     cv.addEventListener('pointermove', onMove);
