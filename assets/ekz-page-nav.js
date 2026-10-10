@@ -85,7 +85,9 @@
     console.warn('[ekz-nav] 主脚本 render 未就绪，位置记忆不生效');
     return;
   }
-  var mem = EkzNav.attachStepMemory(pid);
+  // 位置记忆按页面类型分 key：做题 .zuo / 复盘 .fu（2026-10-10），
+  // 避免同一篇的做题、复盘共用一个步数互相覆盖。无记录时下方还原守卫本就停首步。
+  var mem = EkzNav.attachStepMemory(pid + (isFupan ? '.fu' : '.zuo'));
   var _render = render;
 
   render = function () {
