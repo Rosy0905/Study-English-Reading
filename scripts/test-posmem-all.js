@@ -62,7 +62,7 @@ function listPages() {
     if (!info || info.total < 3) { fails.push({ page: p.rel, why: "步骤不足，跳过: " + JSON.stringify(info) }); continue; }
 
     // 清干净起点
-    await js(`sessionStorage.removeItem('ekz.pos.${p.pid}'); true`);
+    await js(`sessionStorage.removeItem('ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}'); true`);
     await send("Page.reload");
     await new Promise(r => setTimeout(r, 1800));
 
@@ -70,7 +70,7 @@ function listPages() {
     await js(`document.getElementById('next').click(); document.getElementById('next').click(); true`);
     await new Promise(r => setTimeout(r, 600));
     const before = await js(`(typeof idx!=='undefined')?idx:-99`);
-    const stored = await js(`sessionStorage.getItem('ekz.pos.${p.pid}')`);
+    const stored = await js(`sessionStorage.getItem('ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}')`);
 
     // 刷新
     await send("Page.reload");

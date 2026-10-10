@@ -245,7 +245,7 @@
      + 右栏解析（每一步各自一份）。顶栏按钮切阅读模式。 */
   var rvObs = null, rvLeftSlot = null, rvRightSlot = null, rvStepIdx = 1;
   /* 【2026-10-05】右栏锁宽：右栏一旦有笔记就冻结内容宽度（见 rvMaybeLockRight） */
-  var rvRightWrap = null, rvRightLockW = 0;
+  var rvRightWrap = null, rvRightLockW = 0, rvLeftLockW = 0;
 
   function rvAsset() {
     var fp = document.getElementById('focusPage');
@@ -259,6 +259,7 @@
     /* 【2026-10-05】右栏"画过笔记就锁宽"：先把上次保存的锁宽读出来，
        右栏有笔记时冻结内容宽度，拖分隔条只动栏外留白、不再回流文字（rvMaybeLockRight）。 */
     try { var _lw = parseInt(localStorage.getItem('ekz-rv-rvlock') || '0', 10); if (_lw > 0 && !rvRightLockW) rvRightLockW = _lw; } catch (_) {}
+    try { var _llw = parseInt(localStorage.getItem('ekz-rv-lvlock') || '0', 10); if (_llw > 0 && !rvLeftLockW) rvLeftLockW = _llw; } catch (_) {}
     /* 右栏解析：把 rightContent 包进自己的容器，画布盖在上面 */
     var scroll = document.getElementById('rightScroll') ||
       document.querySelector('.rightPanel > .scroll');
@@ -317,6 +318,7 @@
       if (rvZoom > 1) zoomEl(hostEl, rvZoom);   /* 换步骤重建后重放缩放 */
       syncZoomBtn();
       rvLeftSlot = slot;
+      rvMaybeLockLeft();
       return true;
     }
 
@@ -352,6 +354,7 @@
       engine.setSlot('rv-right', 'rv-right-step-' + n);
       rvRightSlot = 'rv-right-step-' + n;
       rvMaybeLockRight();
+      rvMaybeLockLeft();
     }
     if (progress) {
       var stepObs = new MutationObserver(function () {
@@ -389,6 +392,37 @@
     var _w = rvRightLockW + 'px';
     if (rvRightWrap.style.width !== _w) rvRightWrap.style.width = _w;
     var _sc = document.getElementById('rightScroll');
+    if (_sc && _sc.style.overflowX !== 'auto') _sc.style.overflowX = 'auto';
+  }
+
+  /* 【2026-10-10】左栏(新题型文本)锁宽：与右栏 rvMaybeLockRight 对称。
+     新题型左栏此前无锁宽 → 拖分隔条改 grid 列宽时文字回流、笔迹跑位。
+     现改为：新题型左栏有笔记就把 .newtypePaper 内容宽度冻成当前宽度；
+     之后拖分隔条只动栏外留白/横滑、内容宽度不变 → 文字不回流、笔迹永远对齐。
+     窄于此宽度时给左栏滚动容器开横向滚动，避免笔记被裁。无笔记时退回自适应。
+     图片型左栏(focusPage)不锁：图片等比缩放，笔迹本就跟随，锁了反而溢出。 */
+  function rvMaybeLockLeft() {
+    var np = document.querySelector('#leftStage .newtypePaper');
+    if (!np || !engine) return;            /* 仅新题型文本模式 */
+    var st = engine.inkStats('rv-left');
+    var hasInk = st && st.strokes;
+    if (!hasInk) {
+      if (rvLeftLockW) {
+        rvLeftLockW = 0;
+        np.style.width = '';
+        var _sc0 = document.getElementById('leftScroll');
+        if (_sc0) _sc0.style.overflowX = '';
+        try { localStorage.removeItem('ekz-rv-lvlock'); } catch (_) {}
+      }
+      return;
+    }
+    if (!rvLeftLockW) {
+      rvLeftLockW = Math.round(np.getBoundingClientRect().width) || np.clientWidth;
+      if (rvLeftLockW > 0) { try { localStorage.setItem('ekz-rv-lvlock', String(rvLeftLockW)); } catch (_) {} }
+    }
+    var _w = rvLeftLockW + 'px';
+    if (np.style.width !== _w) np.style.width = _w;
+    var _sc = document.getElementById('leftScroll');
     if (_sc && _sc.style.overflowX !== 'auto') _sc.style.overflowX = 'auto';
   }
 
@@ -439,6 +473,8 @@
         if (innerWidth <= 1100 || lp.hidden) return;
         rvMaybeLockRight();
         rvSplit.classList.add('drag');
+        rvMaybeLockRight();
+        rvMaybeLockLeft();
         /* 关掉网格过渡动画，分隔线才追得上鼠标 */
         layoutEl.style.transition = 'none';
         try { rvSplit.setPointerCapture(e.pointerId); } catch (_) {}
@@ -465,6 +501,7 @@
     }
     placeRvSplit = function () {
       rvMaybeLockRight();
+      rvMaybeLockLeft();
       /* 单页模式（方法总览这类）绝不能套两栏内联样式，否则内容掉进左栏格 */
       if (lp.hidden || /\bsingle\b/.test(layoutEl.className)) {
         if (layoutEl.style.gridTemplateColumns) layoutEl.style.gridTemplateColumns = '';

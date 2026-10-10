@@ -20,7 +20,8 @@ const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const ROOT = path.resolve(__dirname, "..");
 const PORT = Number(process.argv[2] || 9714);
 const TIMEOUT = 30000;
-const K = "ekz.pos.2019-text3";
+const Kzuo = "ekz.pos.2019-text3.zuo";
+const Kfu = "ekz.pos.2019-text3.fu";
 
 const withTimeout = (p, ms, tag) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(tag + " 超时")), ms))]);
@@ -156,7 +157,7 @@ async function main() {
 
     // ---------- 4) 做题页位置记忆 ----------
     console.log("\n[4] 做题页位置记忆");
-    await gotoClean("library/2019/2019-text3-做题.html", K);
+    await gotoClean("library/2019/2019-text3-做题.html", Kzuo);
     let si = await js(`({total:(typeof DATA!=='undefined')?DATA.steps.length:-1, idx:(typeof idx!=='undefined')?idx:-99})`);
     check(si.total > 3, "有足够步骤可测: " + JSON.stringify(si));
     check(si.idx === -1, "从初始状态干净起步 (idx=" + si.idx + ")");
@@ -166,7 +167,7 @@ async function main() {
     await new Promise(r => setTimeout(r, 700));
     const bi = await js(`(typeof idx!=='undefined')?idx:-99`);
     check(bi === 2, "已推进 3 步 (idx=" + bi + ")");
-    const st = await js(`sessionStorage.getItem('${K}')`);
+    const st = await js(`sessionStorage.getItem('${Kzuo}')`);
     check(st && JSON.parse(st).idx === 2, "位置已写入 sessionStorage: " + st);
     await refresh();
     const ai = await js(`(typeof idx!=='undefined')?idx:-99`);
@@ -176,7 +177,7 @@ async function main() {
 
     // ---------- 5) 复盘页位置记忆 ----------
     console.log("\n[5] 复盘页位置记忆（初值 0，结构 DATA 而非 DATA.steps）");
-    await gotoClean("library/2019/2019-text3-复盘.html", K);
+    await gotoClean("library/2019/2019-text3-复盘.html", Kfu);
     const fi = await js(`({total:(typeof DATA!=='undefined')?(DATA.length||(DATA.steps||[]).length):-1, idx:(typeof idx!=='undefined')?idx:-99})`);
     check(fi.total > 3, "有足够步骤可测: " + JSON.stringify(fi));
     check(fi.idx === 0, "从第 0 步干净起步 (idx=" + fi.idx + ")");
