@@ -5,3 +5,6 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 _test/
+# 测试与备份产物（只在本地留样，不进仓库）
+_test_*/
+_backup_*/
