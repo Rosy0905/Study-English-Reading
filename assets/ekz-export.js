@@ -114,9 +114,22 @@
     '#ekz-exCard .exExtra label{font-size:12px;color:#b48ca0;margin-right:6px}';
   document.head.appendChild(style);
 
+  /* 当前打开着的弹窗。菜单点进二次确认时原地换内容，
+     遮罩不消失 —— 原来先关菜单、读完库统计再新建一个，
+     中间那一下页面全露出来，看起来就是"猛闪一下"。 */
+  let live = null;
+
   function close(mask) {
+    const L = live;
+    if (L && L.mask === mask) {
+      if (L.hold) { clearTimeout(L.hold); L.hold = 0; }
+      L.closing = true;   /* 还在 DOM 里，200ms 内仍可被二次确认接管 */
+    }
     mask.classList.remove('open');
-    setTimeout(() => mask.remove(), 200);
+    setTimeout(() => {
+      mask.remove();
+      if (live === L) live = null;
+    }, 200);
   }
 
   function menu(opts) {
@@ -138,7 +151,21 @@
       b.type = 'button';
       b.className = 'exBtn' + (it.danger ? ' danger' : '');
       b.innerHTML = '<b>' + it.label + '</b>' + (it.sub ? '<span class="d">' + it.sub + '</span>' : '');
-      b.addEventListener('click', () => { close(mask); it.onClick && it.onClick(); });
+      b.addEventListener('click', () => {
+        /* 点了先别关卡片。清空 / 导入这类要回库统计，统计完才弹二次确认，
+           一关一开就是那一下闪。这里留个兜底定时器，真没人接手再关。 */
+        if (live && live.mask === mask) {
+          if (live.hold) clearTimeout(live.hold);
+          live.hold = setTimeout(() => close(mask), 900);
+        }
+        const r = it.onClick && it.onClick();
+        if (r && typeof r.then === 'function') {
+          const done = () => { if (live && live.mask === mask && !live.taken) close(mask); };
+          r.then(done, done);
+        } else {
+          close(mask);
+        }
+      });
       card.appendChild(b);
     });
     addCancel(card, () => close(mask));
@@ -156,8 +183,9 @@
 
   function finish(mask, card) {
     mask.appendChild(card);
-    mask.addEventListener('click', e => { if (e.target === mask) close(mask); });
+    mask.onclick = e => { if (e.target === mask) close(mask); };
     document.body.appendChild(mask);
+    live = { mask, card, hold: 0, taken: false, closing: false };
     requestAnimationFrame(() => mask.classList.add('open'));
   }
 
@@ -173,9 +201,25 @@
    * ----------------------------------------------------------------- */
   function confirm(opts) {
     return new Promise(res => {
-      const mask = document.createElement('div');
-      mask.id = 'ekz-exMask';
-      const card = document.createElement('div');
+      /* 菜单还在（哪怕已经开始淡出、还没从 DOM 摘掉）就原地换内容。
+         新建遮罩会让背景那层模糊断一下，清空数据时最明显。 */
+      let mask, card, reused = false;
+      const L = live;
+      if (L && L.mask && L.mask.isConnected) {
+        if (L.hold) { clearTimeout(L.hold); L.hold = 0; }
+        L.taken = true;
+        mask = L.mask;
+        card = L.card;
+        reused = true;
+        card.innerHTML = '';
+        card.className = '';        /* 清掉上一个主题（ex-red / ex-blue） */
+        mask.classList.add('open');
+      } else {
+        mask = document.createElement('div');
+        mask.id = 'ekz-exMask';
+        card = document.createElement('div');
+        card.id = 'ekz-exCard';
+      }
       const theme = opts.theme === 'blue' ? 'blue' : 'red';
       card.id = 'ekz-exCard';
       card.classList.add('ex-' + theme);
@@ -213,6 +257,9 @@
         close(mask);
         res(v);
       };
+      /* 复用时遮罩沿用菜单那层，点空白处的行为要换成"取消"，
+         否则 Promise 永远不 resolve。 */
+      mask.onclick = e => { if (e.target === mask) done(false); };
 
       const ok = document.createElement('button');
       ok.type = 'button';
@@ -222,7 +269,14 @@
       card.appendChild(ok);
       addCancel(card, () => done(false));
 
-      finish(mask, card);
+      if (reused) {
+        /* 只是换了内容，给一点淡入，看起来是卡片变了而不是闪了一下 */
+        if (card.animate) card.animate(
+          [{ opacity: .5, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }],
+          { duration: 160, easing: 'ease' });
+      } else {
+        finish(mask, card);
+      }
     });
   }
 

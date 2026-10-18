@@ -94,8 +94,13 @@
     // 全屏 / 全文模式是临时状态，不记
     var skip = (typeof fullMode !== 'undefined' && fullMode)
             || (typeof all !== 'undefined' && all);
-    if (!skip && typeof idx === 'number' && idx >= 0) {
-      mem.save(idx);
+    if (!skip && typeof idx === 'number') {
+      /* idx = -1 是「回到起点」：做题页的 reset() 就是把它设回 -1 再 render。
+         原来这里只写 idx >= 0 的情况，等于取消操作没写进记录，旧步数还躺在
+         localStorage 里 —— 她点重置回第一页、刷新又跳回去，就是这么来的。
+         现在 -1 直接把记录作废：位置记忆和画面必须说的是同一件事。 */
+      if (idx >= 0) mem.save(idx);
+      else mem.clear();
     }
     return _render.apply(this, arguments);
   };
@@ -103,7 +108,10 @@
   // 恢复上次位置。两页结构不同：
   //   做题页初值 -1（还没开始），DATA.steps
   //   复盘页初值  0（已在第一步），DATA（数组本身，用 length）
-  if (mem.initial && typeof mem.initial.idx === 'number' && mem.initial.idx > 0) {
+  // 条件从 > 0 放宽到 >= 0（2026-10-18）：做题页停在第 1 步时 idx 正是 0，
+  // 原来这一档恢复不了，刷新就退回「点击下一步开始」，跟位置记忆的说法对不上。
+  // 记录不存在时 mem.initial 是 null，不会误触发。
+  if (mem.initial && typeof mem.initial.idx === 'number' && mem.initial.idx >= 0) {
     var t = mem.initial.idx;
     var total = (typeof DATA !== 'undefined')
       ? (DATA.steps ? DATA.steps.length : DATA.length)

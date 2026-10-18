@@ -203,10 +203,10 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js?v=20261004q"></script>
-<script src="assets/ekz-export.js?v=20261004q"></script>
-<script src="assets/ekz-pdf.js?v=20261004q"></script>
-<script src="manifest.js?v=20261004q"></script>
+<script src="assets/ekz-db.js?v=20261018d"></script>
+<script src="assets/ekz-export.js?v=20261018d"></script>
+<script src="assets/ekz-pdf.js?v=20261018d"></script>
+<script src="manifest.js?v=20261018d"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
@@ -750,6 +750,19 @@ function classifyRec(r){
   }
   return 'note';
 }
+/* 这条记录里到底有没有落过笔。
+   做题页和复盘页离开时会无条件存一次，一笔没画也留一条空记录
+   （marks 里各页都是空数组）；只按"有没有这条记录"数篇数，
+   会把点开又退出的篇目算成"写过"，数字虚高。
+   笔记页本来就是画了才写库，strokes 非空即算。 */
+function recHasInk(r){
+  if(!r)return false;
+  if(Array.isArray(r.strokes))return r.strokes.length>0;
+  if(r.marks&&typeof r.marks==='object'){
+    return Object.keys(r.marks).some(k=>Array.isArray(r.marks[k])&&r.marks[k].length>0);
+  }
+  return false;
+}
 /* 笔数口径（已实测，见 scripts/test-count.js）：
      写字 3 笔 → 撤销 1 次 → 剩 2 条（撤销是减一条，不会变两笔）
      橡皮擦一下 → 记录条数 +1（橡皮本身也是一条，存着才能重画/撤销）
@@ -757,7 +770,8 @@ function classifyRec(r){
 function tallyRecs(recs){
   const t={do:{n:0},rv:{n:0},note:{n:0},bytes:0};
   recs.forEach(r=>{
-    t[classifyRec(r)].n++;
+    /* 空记录不计数，但体积照算：清空时它们一样会被删掉 */
+    if(recHasInk(r))t[classifyRec(r)].n++;
     /* 体积：JSON 序列化后的字节数。笔记都是坐标数组，
        序列化长度跟实际占用一个量级，够她判断"值不值得备份" */
     try{t.bytes+=new Blob([JSON.stringify(r)]).size;}catch(e){}
@@ -772,7 +786,10 @@ function inkText(o){
   return o.n?(o.n+' 篇'):'无';
 }
 function confirmWipeAll(){
-  getAllNotes().catch(err=>{
+  /* 必须 return：菜单点击要靠这个 Promise 决定什么时候收起卡片。
+     以前没返回，调用方拿到 undefined，只能立刻关菜单，
+     于是清空确认弹出来之前那一下遮罩是空的 —— 她说的"猛闪一下"。 */
+  return getAllNotes().catch(err=>{
     console.error(err);
     toastMsg('数据库打不开，可能被其他标签页占用');
     throw err;
@@ -861,64 +878,111 @@ function exportJsonAll(){
     toastMsg('已导出 '+notes.length+' 条笔记记录'+(mN?' + '+mN+' 条主页标记':''));
   }).catch(err=>{console.error(err);toastMsg('导出失败');});
 }
-/* 把一张底稿图 + 该页笔迹合成 canvas（图片走 dataURL，file:// 下不会被污染） */
-function renderPageCanvas(imgSrc,strokes){
+/* ---- PDF：把笔迹画到一层透明画布上 ---- */
+/* 一条条按原始顺序画。橡皮夹在中间，就只擦它之前画过的东西，跟 ink-paper.js
+   的重绘逻辑一致。原来这里分荧光笔 / 钢笔 / 橡皮三轮，橡皮永远排在最后，
+   会把所有钢笔一起擦掉 —— 页面里早修过这个坑，导出这条路径漏了。 */
+/* k 是线宽系数（导出像素 / 屏幕 CSS 像素），map 把笔迹的归一化坐标
+   换算到这张画布上。笔记页拆成两页后，两页各用各的 map。 */
+function drawStrokes(c,strokes,k,map){
+  for(const s of strokes||[]){
+    const P0=s.pts;if(!P0||!P0.length)continue;
+    const P=P0.map(q=>{const m=map(q.x,q.y);return {x:m.x,y:m.y,p:(q.p===undefined?.5:q.p)};});
+    c.save();
+    if(s.tool==='hl'){c.lineCap='butt';c.lineJoin='miter';c.miterLimit=2;}
+    else{c.lineCap='round';c.lineJoin='round';}
+    if(s.tool==='er'){c.globalCompositeOperation='destination-out';c.strokeStyle=c.fillStyle='#000';c.globalAlpha=1;}
+    else if(s.tool==='hl'){c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=(typeof s.a==='number')?s.a:.18;}
+    else{c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=1;}
+    if(P.length===1){
+      if(s.tool==='hl'){c.restore();continue;}   /* 荧光笔落笔顿点不画，跟屏幕上一样 */
+      c.beginPath();c.arc(P[0].x,P[0].y,s.size*k/2,0,7);c.fill();c.restore();continue;
+    }
+    if(s.tool==='pen'){
+      let px=P[0].x,py=P[0].y,pp=P[0].p;
+      for(let i=1;i<P.length-1;i++){
+        const a=P[i],b=P[i+1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2,mp=(a.p+b.p)/2;
+        c.lineWidth=s.size*k*(.65+.7*((pp+mp)/2));
+        c.beginPath();c.moveTo(px,py);c.quadraticCurveTo(a.x,a.y,mx,my);c.stroke();
+        px=mx;py=my;pp=mp;
+      }
+      const last=P[P.length-1];
+      c.lineWidth=s.size*k*(.65+.7*((pp+last.p)/2));
+      c.beginPath();c.moveTo(px,py);c.lineTo(last.x,last.y);c.stroke();
+    }else{
+      c.lineWidth=s.size*k;c.beginPath();c.moveTo(P[0].x,P[0].y);
+      for(let i=1;i<P.length-1;i++)c.quadraticCurveTo(P[i].x,P[i].y,(P[i].x+P[i+1].x)/2,(P[i].y+P[i+1].y)/2);
+      c.lineTo(P[P.length-1].x,P[P.length-1].y);c.stroke();
+    }
+    c.restore();
+  }
+}
+function loadImg(src){
   return new Promise(res=>{
-    const finish=img=>{
-      const W=img?img.naturalWidth:1240,H=img?img.naturalHeight:Math.round(1240*1.414);
-      const cv=document.createElement('canvas');cv.width=W;cv.height=H;
-      const c=cv.getContext('2d');
-      c.fillStyle='#fff';c.fillRect(0,0,W,H);
-      if(img)c.drawImage(img,0,0,W,H);
-      const st=strokes||[];
-      /* 笔迹粗细补偿：做题页屏幕上画布约 630 CSS px 宽，导出画布是图片原始
-         分辨率（更宽），size 不放大会细成发丝——按宽度比例补偿 */
-      const k=W/630;
-      const draw=s=>{
-        const P0=s.pts;if(!P0||!P0.length)return;
-        const P=P0.map(q=>({x:q.x*W,y:q.y*H,p:(q.p===undefined?.5:q.p)}));
-        c.save();c.lineCap='round';c.lineJoin='round';
-        if(s.tool==='er'){c.globalCompositeOperation='destination-out';c.strokeStyle=c.fillStyle='#000';c.globalAlpha=1;}
-        else if(s.tool==='hl'){c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=.32;}
-        else{c.globalCompositeOperation='source-over';c.strokeStyle=c.fillStyle=s.color;c.globalAlpha=1;}
-        if(P.length===1){c.beginPath();c.arc(P[0].x,P[0].y,s.size*k/2,0,7);c.fill();c.restore();return;}
-        if(s.tool==='pen'){
-          let px=P[0].x,py=P[0].y,pp=P[0].p;
-          for(let i=1;i<P.length-1;i++){
-            const a=P[i],b=P[i+1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2,mp=(a.p+b.p)/2;
-            c.lineWidth=s.size*k*(.65+.7*((pp+mp)/2));
-            c.beginPath();c.moveTo(px,py);c.quadraticCurveTo(a.x,a.y,mx,my);c.stroke();
-            px=mx;py=my;pp=mp;
-          }
-          const last=P[P.length-1];
-          c.lineWidth=s.size*k*(.65+.7*((pp+last.p)/2));
-          c.beginPath();c.moveTo(px,py);c.lineTo(last.x,last.y);c.stroke();
-        }else{
-          c.lineWidth=s.size*k;c.beginPath();c.moveTo(P[0].x,P[0].y);
-          for(let i=1;i<P.length-1;i++){c.quadraticCurveTo(P[i].x,P[i].y,(P[i].x+P[i+1].x)/2,(P[i].y+P[i+1].y)/2);}
-          c.lineTo(P[P.length-1].x,P[P.length-1].y);c.stroke();
-        }
-        c.restore();
-      };
-      for(const s of st)if(s.tool==='hl')draw(s);
-      for(const s of st)if(s.tool==='pen')draw(s);
-      for(const s of st)if(s.tool==='er')draw(s);
-      res(cv);
-    };
-    if(!imgSrc){finish(null);return;}
+    if(!src)return res(null);
     const im=new Image();
-    im.onload=()=>finish(im);
-    im.onerror=()=>finish(null);
-    im.src=imgSrc;
+    im.onload=()=>res(im);
+    im.onerror=()=>res(null);
+    im.src=src;
   });
+}
+/* 导出用的一页 A4：底图按比例铺满、上下留一点白，笔迹叠在上面。
+   side=0 是文章页，side=1 是题目页。
+   笔记页那张纸是双页并排、笔迹按整张纸归一化（x=0.5 正好是中缝），
+   拆成单页时 x 要重新映射：文章页 x*2，题目页 (x-0.5)*2。
+   跨中缝的笔画两页各画自己那一半，靠裁剪交界，拼起来跟原来一样。 */
+const NOTE_SCREEN_W=1100;   /* 笔记页那张纸在平板上的大致 CSS 宽度（两个半页合起来） */
+const A4_RATIO=297/210;     /* 严格 A4 竖版 */
+async function renderNotePage(src,strokes,side){
+  const img=await loadImg(src);
+  const iw=(img&&img.naturalWidth)||1240;
+  const ih=(img&&img.naturalHeight)||1755;
+  /* 底图原始宽 1760。放到 1800 以内（A4 上约 213dpi），比这更小的照原样 */
+  const W=Math.min(iw,1800);
+  const H=Math.round(W*A4_RATIO);
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const c=cv.getContext('2d');
+  c.fillStyle='#fff';c.fillRect(0,0,W,H);
+  const sc=Math.min(W/iw,H/ih);
+  const dw=iw*sc,dh=ih*sc,dx=(W-dw)/2,dy=(H-dh)/2;
+  if(img)c.drawImage(img,dx,dy,dw,dh);
+  /* 笔迹单独一层再盖上去：橡皮是 destination-out，直接画在底图上会把
+     真题内容擦出洞来。分开画就只擦笔迹自己。 */
+  const ink=document.createElement('canvas');ink.width=W;ink.height=H;
+  const ic=ink.getContext('2d');
+  ic.save();ic.beginPath();ic.rect(dx,dy,dw,dh);ic.clip();
+  drawStrokes(ic,strokes,dw/(NOTE_SCREEN_W/2),
+    (x,y)=>({x:dx+(x-side*.5)*2*iw*sc,y:dy+y*ih*sc}));
+  ic.restore();
+  c.drawImage(ink,0,0);
+  ink.width=ink.height=0;
+  return cv;
+}
+/* 笔记页的记录 id 就是篇目 id（2019-text1），笔迹在 strokes 里。
+   老记录可能是 pages 数组（V3/V4 之前），按笔记页自己的迁移规则摊平。 */
+function noteStrokes(rec){
+  if(!rec)return [];
+  if(rec.migratedV4==='1'&&Array.isArray(rec.strokes))return rec.strokes;
+  if(Array.isArray(rec.pages)){
+    const wide=rec.migratedV3==='1';
+    return rec.pages.reduce((acc,page)=>acc.concat(page||[]),[]).map(s=>({
+      ...s,pts:(s.pts||[]).map(q=>{
+        const a=Array.isArray(q)?{x:q[0],y:q[1],p:.5}:{x:q.x,y:q.y,p:(q.p===undefined?.5:q.p)};
+        return {...a,x:wide?a.x*.5:a.x};
+      })
+    }));
+  }
+  return Array.isArray(rec.strokes)?rec.strokes:[];
 }
 function loadImgData(paperId){
   if(window.EKZ_IMGDATA&&EKZ_IMGDATA[paperId])return Promise.resolve(EKZ_IMGDATA[paperId]);
   return new Promise((res,rej)=>{
     const s=document.createElement('script');
     s.src='assets/pdfimg/'+paperId+'.js';
-    s.onload=()=>res(window.EKZ_IMGDATA&&EKZ_IMGDATA[paperId]);
-    s.onerror=()=>rej(new Error('图片数据包缺失'));
+    /* 执行完就把标签摘掉：script 元素会一直留着源码，一篇两个 dataURL
+       约 1.5MB，整库导出一遍就是上百 MB 白占内存。 */
+    s.onload=()=>{try{s.remove();}catch(e){}res(window.EKZ_IMGDATA&&EKZ_IMGDATA[paperId]);};
+    s.onerror=()=>{try{s.remove();}catch(e){}rej(new Error('图片数据包缺失'));};
     document.head.appendChild(s);
   });
 }
@@ -931,27 +995,40 @@ async function exportPdfPapers(yearVal,paperVal){
       if(paperVal!=='all')papers=papers.filter(it=>it.id===paperVal);
     }
     if(!papers.length){toastMsg('这个范围还没有篇目哦');return;}
-    toastMsg('正在合成 PDF…');
     const notes=await getAllNotes();
-    let markCount=0;for(const it2 of papers){const r2=notes.find(r=>r.id===it2.id+'-mark');if(r2&&r2.marks)for(const k in r2.marks)markCount+=(r2.marks[k]||[]).length;}
-    const canvases=[];
-    for(const it of papers){
+    const recOf={};for(const r of notes)recOf[r.id]=r;
+    const pages=[];let inkPapers=0;
+    for(let i=0;i<papers.length;i++){
+      const it=papers[i];
+      toastMsg('正在合成 '+(i+1)+'/'+papers.length+' 篇…');
       let imgs=null;
       try{imgs=await loadImgData(it.id);}catch(_){}
-      const rec=notes.find(r=>r.id===it.id+'-mark');
-      const slots=['article','question'];
-      for(let i=0;i<2;i++){
-        const src=(imgs&&imgs[i])||(it.underlay&&it.underlay[i])||'';
-        /* 有图片数据就用图；没有图就用纯白 A4 + 笔迹兜底 */
-        const cv=await renderPageCanvas(src.indexOf('data:')===0?src:'',rec&&rec.marks&&rec.marks[slots[i]]);
-        canvases.push(cv);
+      const srcs=[0,1].map(n=>{
+        if(imgs&&imgs[n])return imgs[n];
+        /* https 下底图和页面同源，缺数据包可以直接用 png；file:// 下不行，
+           画布会被污染、整份导出全废，那种情况宁可留白 */
+        if(location.protocol!=='file:'&&it.underlay)return it.underlay[n]||'';
+        return '';
+      });
+      const strokes=noteStrokes(recOf[it.id]);
+      if(strokes.length)inkPapers++;
+      /* 一页一张 A4：文章页、题目页各成一页 */
+      for(let n=0;n<2;n++){
+        const cv=await renderNotePage(srcs[n],strokes,n);
+        pages.push({jpeg:await EkzPdf.encodeAsync(cv,0.9),width:cv.width,height:cv.height,
+          ptW:595.28,ptH:841.89});
+        /* 合成一张就编码、丢画布。原来所有页攒在数组里最后一起编码，
+           整库导出的内存能顶到 2GB 以上，标签页直接崩。 */
+        cv.width=cv.height=0;
       }
+      if(window.EKZ_IMGDATA)delete window.EKZ_IMGDATA[it.id];
+      await new Promise(r=>setTimeout(r,0));   /* 让状态条刷得出来 */
     }
-    if(!canvases.length){toastMsg('没有可导出的内容');return;}
-    const blob=await EkzPdf.build(canvases);
+    if(!pages.length){toastMsg('没有可导出的内容');return;}
+    const blob=await EkzPdf.buildFromJpegs(pages);
     const d=new Date(),pad=n=>String(n).padStart(2,'0');
-    EkzPdf.download(blob,'英语真题做题页_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.pdf');
-    toastMsg('已导出 PDF，共 '+canvases.length+' 页'+(markCount?('，含 '+markCount+' 条批注'):'（注意：没有找到任何批注哦）'));
+    EkzPdf.download(blob,'英语真题_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.pdf');
+    toastMsg('已导出 PDF，共 '+pages.length+' 页'+(inkPapers?('，'+inkPapers+' 篇有手写笔记'):'（这些篇目还没有手写笔记，导出的是干净真题）'));
   }catch(err){console.error(err);toastMsg('PDF 导出失败');}
 }
 document.getElementById('bkExportBtn').addEventListener('click',()=>{
@@ -978,11 +1055,11 @@ document.getElementById('bkExportBtn').addEventListener('click',()=>{
   ySel.addEventListener('change',fillPapers);
   EkzExport.menu({
     title:'导出',
-    sub:'JSON 是全量备份；PDF 按下面的范围导出做题页（文章＋题目，含手写批注）',
+    sub:'JSON 是全量备份；PDF 按下面的范围导出真题（干净底图＋手写笔记，一页一张 A4）',
     extra:wrap,
     items:[
       {label:'备份 JSON',sub:'全部批注和笔记打包成一个文件（恢复用）',onClick:()=>exportJsonAll()},
-      {label:'导出 PDF',sub:'做题页文章＋题目，带手写批注',onClick:()=>exportPdfPapers(ySel.value,pSel.value)},
+      {label:'导出 PDF',sub:'文章一页、题目一页，A4 竖版，带手写笔迹',onClick:()=>exportPdfPapers(ySel.value,pSel.value)},
       {label:'清空所有数据',sub:'做题/复盘/真题批注、主页标记、浏览器缓存全清',
        danger:true,onClick:()=>confirmWipeAll()}
     ]
