@@ -154,7 +154,7 @@
     }
     if (!arr.length) { var c0 = engine.exportSlot(); if (c0) arr = [c0]; }
     if (!arr.length) return;
-    window.EkzPdf.build(arr).then(function (blob) {
+    window.EkzPdf.build(arr, { a4: true }).then(function (blob) {
       window.EkzPdf.download(blob, PAPER + '-\u6279\u6CE8-' + stamp() + '.pdf');
     });
   }
