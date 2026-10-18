@@ -114,9 +114,22 @@
       // lastRenderedIdx 也要清，否则 render 会走 sameGroup 的"沿用上一步内容"分支。
       if (typeof lastRenderedIdx !== 'undefined') { lastRenderedIdx = -1; }
       if (typeof all !== 'undefined') { all = false; }
+      window.__ekzFirstRenderDone = 1;
       try { render({ restore: true }); } catch (e) { /* 参数不兼容就退回无参 */ render(); }
       console.log('[ekz-nav] 已恢复位置 idx=' + t + '/' + total);
     }
+  }
+
+  // 复盘页的首绘改由本文件触发（2026-10-18）：
+  //   原来复盘页主脚本末尾直接 render()，先画第 0 步「方法总览」，hydrateAssets 随即
+  //   把那 8 张方法图注成 <script> 发出去；而本文件是 defer，排在后面才恢复 idx，
+  //   图已经在下、切走也停不下来（script 请求不随 DOM 移除而取消），等于每次进
+  //   复盘页都白下约 2.7MB，还跟目标步骤要用的图抢带宽。
+  //   现在主脚本那次首绘改成"等本文件放行"：有记忆就画记忆那一步，没记忆或记忆
+  //   越界才画第 0 步。做题页不受影响，它的首绘在 Promise.all().then(render) 里。
+  if (isFupan && !window.__ekzFirstRenderDone) {
+    window.__ekzFirstRenderDone = 1;
+    render();
   }
 
   // 离开页面前也存一次（防用户没点"下一步"就关掉）

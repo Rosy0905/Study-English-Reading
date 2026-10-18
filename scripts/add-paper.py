@@ -21,29 +21,36 @@ PY = sys.executable
 
 
 def extract_images(do_html_path, out_dir, base):
-    """从做题模式 html 提取文章页/题目页 base64 图（兼容 articleImage/img1 两种键名）"""
+    """从做题模式 html 提取文章页/题目页 base64 图（兼容 articleImage/img1 两种键名；支持 png / webp 内嵌）"""
     html = open(do_html_path, encoding="utf-8").read()
     out = []
     for slot in ("article", "question"):
         alt = {"article": "img1", "question": "img2"}[slot]
-        keys = [f'"{slot}Image":"data:image/png;base64,',
-                f'"{alt}":"data:image/png;base64,']
         data = None
-        for key in keys:
-            i = html.find(key)
-            if i < 0:
-                key = key.replace("'", '"')
+        fmt = None
+        for raw_key in (f'"{slot}Image":', f'"{alt}":'):
+            for key in (raw_key, raw_key.replace('"', "'")):
                 i = html.find(key)
-            if i >= 0:
-                start = i + len(key)
-                end = html.find('"', start)
-                data = base64.b64decode(html[start:end])
+                if i < 0:
+                    continue
+                m = re.match(r'''\s*["']data:image/(png|webp);base64,([A-Za-z0-9+/=]+)["']''',
+                             html[i + len(key):])
+                if m:
+                    fmt, data = m.group(1), base64.b64decode(m.group(2))
+                    break
+            if data is not None:
                 break
         if data is None:
             print(f"  ! 做题页里没找到 {slot} 图（底稿图跳过，笔记页会是空白纸）")
             continue
         path = os.path.join(out_dir, f"{base}-{slot}.png")
-        open(path, "wb").write(data)
+        if fmt == "webp":
+            # 底稿仍以 PNG 落盘，笔记页引用路径不用改
+            import io
+            from PIL import Image
+            Image.open(io.BytesIO(data)).save(path, "PNG")
+        else:
+            open(path, "wb").write(data)
         out.append(path)
         print(f"  底稿图 {slot}: {len(data)//1024}KB -> {os.path.basename(path)}")
     return out
