@@ -621,7 +621,8 @@ function closeNotesDB(){
  *   1) IndexedDB 主库 ekz-notes-v2（手写笔记 + 做题批注都在这）
  *   2) IndexedDB 旧库 ekz-notes-db（留着会挡住 migrate，导致清空后笔记复活）
  *   3) localStorage：收藏 / 学完 / 最近学习 / 手写工具偏好 / 分栏比例 / 缩放
- *   4) sessionStorage：位置记忆
+ *   4) sessionStorage：主页位置记忆（做题/复盘页的步数记忆 2026-10-18 起搬到了
+ *      localStorage，前缀 ekz.pos.，所以下面 CLEAR_LS_PREFIX 里也列了它）
  * 外加 Cache Storage。
  *
  * 关键：deleteDatabase 会被同标签页任何还开着的连接卡成 onblocked。
@@ -647,7 +648,10 @@ const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
    清空代号必须在清空之后继续活着 —— 它正是用来拦那些还开着的
    做题页标签页在退出时把旧笔迹写回来的。代号只带一个时间戳，
    新画的笔时刻一定比它新，不影响之后正常使用；下次清空会覆盖重写。 */
-const CLEAR_LS_PREFIX=['ekz-zoom-','ekz-ink-bk-','ekz-ink-bkts-'];
+/* ekz.pos. 是做题/复盘页的步数记忆（2026-10-18 从 sessionStorage 搬到 localStorage）。
+   她说【清空所有数据要连位置记录一起清】，所以列进前缀表；
+   主页自己的 ekz.pos.indexScroll / indexYear 也因此一并被清 —— 清完就是一张白纸。 */
+const CLEAR_LS_PREFIX=['ekz-zoom-','ekz-ink-bk-','ekz-ink-bkts-','ekz.pos.'];
 function wipeAllData(){
   const stat={notes:0,marks:0,ls:0,ss:0,db:0,cache:0,dbFailed:[],wiped:0};
   return getAllNotes().catch(()=>[])

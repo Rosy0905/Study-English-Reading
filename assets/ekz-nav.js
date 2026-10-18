@@ -12,8 +12,13 @@
  *   - 跳转目标从 manifest 读：zuoti / fupan / note 字段，缺哪个就不显示哪个按钮。
  *   - 按钮样式复用页面自身的按钮类（做题页 .btn、复盘页默认 button、
  *     笔记页 .tbtn），所以外观自然与「阅读模式」「导出」一致。
- *   - 位置记忆用 sessionStorage：只记当前标签页，刷新保留、关掉标签自动清空，
- *     不会像 localStorage 那样跨设备/隔天还停在老地方。
+ *   - 位置记忆用 localStorage（2026-10-18 改）：原来用 sessionStorage，只在标签页
+ *     里活着，平板放后台被系统回收、标签页重载一次就丢 —— 她反馈"做了一半第二天
+ *     忘了位置"。现在改成 localStorage：只要浏览器数据还在就记得住。
+ *     读的时候先 localStorage，没有再回读 sessionStorage（接住改版前存下的旧记录）。
+ *     写不进 localStorage（隐私模式 / 额度满）时退回 sessionStorage，不至于报错。
+ *     【坑】置顶标记 ekz.homeTop 反过来，必须留在 sessionStorage：它是一次性信号，
+ *     搬进 localStorage 会变成"每次回主页都强制置顶"，位置记忆就废了。
  */
 (function () {
   'use strict';
@@ -23,12 +28,20 @@
   var stepKey = function (id) { return NS + id; };
 
   /* ---------- 工具 ---------- */
+  /* 位置记忆的读写口。存储选择见文件头注释：
+     优先 localStorage（跨标签页、跨天都在），读不到再看 sessionStorage（旧记录）。 */
   function readJSON(k, dflt) {
-    try { var v = sessionStorage.getItem(k); return v ? JSON.parse(v) : dflt; }
+    try {
+      var v = localStorage.getItem(k);
+      if (v == null) v = sessionStorage.getItem(k);
+      return v ? JSON.parse(v) : dflt;
+    }
     catch (e) { return dflt; }
   }
   function writeJSON(k, v) {
-    try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+    var s = JSON.stringify(v);
+    try { localStorage.setItem(k, s); return; } catch (e) {}
+    try { sessionStorage.setItem(k, s); } catch (e) {}
   }
 
   /* =========================================================================
@@ -48,11 +61,17 @@
         if (extra) { for (var p in extra) { o[p] = extra[p]; } }
         writeJSON(k, o);
       },
-      clear: function () { try { sessionStorage.removeItem(k); } catch (e) {} }
+      /* 清记录时两边都清：改版前的旧值可能还留在 sessionStorage 里 */
+      clear: function () {
+        try { localStorage.removeItem(k); } catch (e) {}
+        try { sessionStorage.removeItem(k); } catch (e) {}
+      }
     };
   }
 
-  // 主页：记住上次展开到哪个年份
+  // 主页：记住上次展开到哪个年份。
+  // 主页 index.html 没引本文件，真正的实现在那边，且【仍用 sessionStorage】。
+  // 这里故意保持原样不动，免得两边对同一个 key 用了不同编码（raw / JSON）打架。
   var yearMemory = {
     initial: (function () { try { return sessionStorage.getItem(YEAR_KEY); } catch (e) { return null; } })(),
     save: function (y) { try { if (y) sessionStorage.setItem(YEAR_KEY, y); } catch (e) {} }

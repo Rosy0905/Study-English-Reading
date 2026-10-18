@@ -61,8 +61,8 @@ function listPages() {
     const info = await js(`({total:(typeof DATA!=='undefined')?(DATA.steps?DATA.steps.length:DATA.length):-1, idx:(typeof idx!=='undefined')?idx:-99})`);
     if (!info || info.total < 3) { fails.push({ page: p.rel, why: "步骤不足，跳过: " + JSON.stringify(info) }); continue; }
 
-    // 清干净起点
-    await js(`sessionStorage.removeItem('ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}'); true`);
+    // 清干净起点（2026-10-18 起记录落 localStorage，两边都清）
+    await js(`(function(){var k='ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}';localStorage.removeItem(k);sessionStorage.removeItem(k);return true;})()`);
     await send("Page.reload");
     await new Promise(r => setTimeout(r, 1800));
 
@@ -70,7 +70,7 @@ function listPages() {
     await js(`document.getElementById('next').click(); document.getElementById('next').click(); true`);
     await new Promise(r => setTimeout(r, 600));
     const before = await js(`(typeof idx!=='undefined')?idx:-99`);
-    const stored = await js(`sessionStorage.getItem('ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}')`);
+    const stored = await js(`(function(){var k='ekz.pos.${p.pid}${p.isFupan ? ".fu" : ".zuo"}';return localStorage.getItem(k)||sessionStorage.getItem(k);})()`);
 
     // 刷新
     await send("Page.reload");
