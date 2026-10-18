@@ -13,7 +13,8 @@
 (function () {
   'use strict';
 
-  const A4_SHORT_PT = 595.28;   /* A4 短边（pt）。老入口 build() 没指定物理尺寸时按它兜底 */
+  const A4_SHORT_PT = 595.28;   /* A4 短边（pt） */
+  const A4_LONG_PT  = 841.89;   /* A4 长边（pt） */
 
   function jpegBytes(canvas, quality) {
     const url = canvas.toDataURL('image/jpeg', quality || 0.92);
@@ -66,7 +67,12 @@
       offs[pageId(i)] = offset;
       push(pageId(i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + ptW + ' ' + ptH + '] ' +
         '/Contents ' + contId(i) + ' 0 R /Resources << /XObject << /Im0 ' + imgId(i) + ' 0 R >> /ProcSet [/PDF /ImageC] >> >>\nendobj\n');
-      const content = 'q ' + ptW + ' 0 0 ' + ptH + ' 0 0 cm /Im0 Do Q\n';
+      /* 图按比例缩到页面里、居中留白，不铺满。铺满会把画布比例和页面比例
+         不一致的页拉变形（做题页 0.722 对 A4 的 0.707，差 2% 也看得出来）。 */
+      const sc = Math.min(ptW / p.width, ptH / p.height);
+      const dw = +(p.width * sc).toFixed(2), dh = +(p.height * sc).toFixed(2);
+      const dx = +((ptW - dw) / 2).toFixed(2), dy = +((ptH - dh) / 2).toFixed(2);
+      const content = 'q ' + dw + ' 0 0 ' + dh + ' ' + dx + ' ' + dy + ' cm /Im0 Do Q\n';
       offs[contId(i)] = offset;
       push(contId(i) + ' 0 obj\n<< /Length ' + content.length + ' >>\nstream\n' + content + 'endstream\nendobj\n');
       offs[imgId(i)] = offset;
@@ -94,15 +100,30 @@
     return new Blob(parts, { type: 'application/pdf' });
   }
 
-  /* 老入口：画布页。保持原来的 96dpi 换算，笔记页/做题页的既有导出不受影响。 */
-  function build(canvases) {
-    const pages = canvases.map(cv => ({
-      jpeg: jpegBytes(cv),
-      width: cv.width,
-      height: cv.height,
-      ptW: +(cv.width / 96 * 72).toFixed(2),
-      ptH: +(cv.height / 96 * 72).toFixed(2)
-    }));
+  /* 老入口：画布页。默认按 96dpi 换算（笔记页那种双页并排的纸，页面跟着像素走）；
+     opts.a4 为真时页面对齐标准 A4，方向由画布宽高决定 —— 做题页 / 复盘页的
+     批注本来就是"一页真题"，对齐 A4 后打印 1:1，不再被打印驱动缩一道。 */
+  function build(canvases, opts) {
+    opts = opts || {};
+    const pages = canvases.map(cv => {
+      if (opts.a4) {
+        const land = cv.width > cv.height;
+        return {
+          jpeg: jpegBytes(cv),
+          width: cv.width,
+          height: cv.height,
+          ptW: land ? A4_LONG_PT : A4_SHORT_PT,
+          ptH: land ? A4_SHORT_PT : A4_LONG_PT
+        };
+      }
+      return {
+        jpeg: jpegBytes(cv),
+        width: cv.width,
+        height: cv.height,
+        ptW: +(cv.width / 96 * 72).toFixed(2),
+        ptH: +(cv.height / 96 * 72).toFixed(2)
+      };
+    });
     return Promise.resolve(assemble(pages));
   }
 

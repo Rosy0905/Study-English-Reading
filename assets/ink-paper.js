@@ -623,14 +623,32 @@
     cv.addEventListener('contextmenu', e => { if (editing) e.preventDefault(); });
 
     /* 导出：白底 + 容器里的底图（如果有）+ 笔迹；橡皮只擦笔迹不擦底图 */
+    /* 【2026-10-18 导出清晰度】原来固定出 2 倍屏幕尺寸：屏幕上文章栏 451 CSS 宽、
+       底图 1805 宽，导出只有 902 宽，是原图的一半，字边发虚；而且不同设备屏幕
+       宽窄不同，同一篇导出来清晰度还不一样。
+       现在倍率跟着底图走 —— 底图 1805 / 显示 451 就按 4 倍出片，导出正好是原图
+       分辨率。长边封顶 4000：整张双页笔记会到 3520×4900，超过 iOS 画布 1600 万
+       像素的上限会变空白，所以按长边收一档。 */
+    const EXPORT_MAX_EDGE = 4000;
     function exportCanvas() {
       const img = host.querySelector('img');
       const w = host.clientWidth || (img ? img.naturalWidth : 1240);
       const h = host.clientHeight || (img ? img.naturalHeight : Math.round(1240 * 1.414));
       if (!w || !h) return null;
+      let k = 2;
+      if (img && img.naturalWidth) {
+        /* 用 clientWidth（布局尺寸），不用 getBoundingClientRect：
+           页面被 CSS transform 缩放过时 rect 会变小，倍率就会算大一大截、
+           再被长边封顶截断，白丢分辨率。 */
+        const dispW = img.clientWidth || img.getBoundingClientRect().width || 0;
+        if (dispW > 0) k = img.naturalWidth / dispW;
+      }
+      const longEdge = Math.max(w, h) * k;
+      if (longEdge > EXPORT_MAX_EDGE) k *= EXPORT_MAX_EDGE / longEdge;
+      if (!(k > 0)) k = 2;
       const out = document.createElement('canvas');
-      out.width = Math.round(w * 2); out.height = Math.round(h * 2);
-      const c = out.getContext('2d'); c.scale(2, 2);
+      out.width = Math.round(w * k); out.height = Math.round(h * k);
+      const c = out.getContext('2d'); c.scale(k, k);
       c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
       const hr = host.getBoundingClientRect();
       host.querySelectorAll('img').forEach(function (im) {
@@ -641,10 +659,11 @@
       });
       const ink = document.createElement('canvas');
       ink.width = out.width; ink.height = out.height;
-      const ic = ink.getContext('2d'); ic.scale(2, 2);
-      for (const s of strokes) if (s.tool === 'hl') stroke(ic, s);
-      for (const s of strokes) if (s.tool === 'pen') stroke(ic, s);
-      for (const s of strokes) if (s.tool === 'er') stroke(ic, s);
+      const ic = ink.getContext('2d'); ic.scale(k, k);
+      /* 按原始顺序逐条重放。原来分荧光笔 / 钢笔 / 橡皮三轮画，橡皮永远排在
+         最后，会把这一页所有钢笔一起擦掉（页面重绘早就修过这个坑，导出这条路
+         一直漏着）。原样时序才是用户真正画出来的样子。 */
+      for (const s of strokes) stroke(ic, s);
       c.drawImage(ink, 0, 0, w, h);
       return out;
     }

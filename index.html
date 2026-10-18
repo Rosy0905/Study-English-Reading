@@ -203,10 +203,10 @@ footer{margin-top:30px;text-align:center;color:#b7a9cf;font-size:12px;line-heigh
 <!-- 笔记备份弹窗 -->
 <div id="toast" style="position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:#5a4382;color:#fff;font-size:13px;border-radius:999px;padding:8px 18px;opacity:0;transition:opacity .25s;pointer-events:none"></div>
 
-<script src="assets/ekz-db.js?v=20261018d"></script>
-<script src="assets/ekz-export.js?v=20261018d"></script>
-<script src="assets/ekz-pdf.js?v=20261018d"></script>
-<script src="manifest.js?v=20261018d"></script>
+<script src="assets/ekz-db.js?v=20261018e"></script>
+<script src="assets/ekz-export.js?v=20261018e"></script>
+<script src="assets/ekz-pdf.js?v=20261018e"></script>
+<script src="manifest.js?v=20261018e"></script>
 <script>
 const LS_FAV='ekz.favs', LS_DONE='ekz.done', LS_RECENT='ekz.recent';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(_){return d}};
@@ -1015,7 +1015,7 @@ async function exportPdfPapers(yearVal,paperVal){
       /* 一页一张 A4：文章页、题目页各成一页 */
       for(let n=0;n<2;n++){
         const cv=await renderNotePage(srcs[n],strokes,n);
-        pages.push({jpeg:await EkzPdf.encodeAsync(cv,0.9),width:cv.width,height:cv.height,
+        pages.push({jpeg:await EkzPdf.encodeAsync(cv,0.95),width:cv.width,height:cv.height,
           ptW:595.28,ptH:841.89});
         /* 合成一张就编码、丢画布。原来所有页攒在数组里最后一起编码，
            整库导出的内存能顶到 2GB 以上，标签页直接崩。 */
