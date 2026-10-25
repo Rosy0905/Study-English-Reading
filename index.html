@@ -635,6 +635,12 @@ const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
   /* 【2026-10-25 补】荧光笔浓度偏好 + 复盘左右栏宽，原来都不在表里，
      清空后这三份缓存还留着，主站同步球会显示阅读站仍有数据 */
   'ekz-hl-alpha','ekz-rv-lvlock','ekz-rv-rvlock',
+  /* 【2026-10-25 再补】平板自检面板的日志键（ink-debug.js 写的 ekz-debug-log-v2）。
+     这是这次"阅读站清了主站还显示 1 条"的真凶：日志键带 ekz 前缀，
+     主站同步球按前缀收数据会数它，但本站清空清单里没有它，于是它活着；
+     主站代清是按整个 ekz 前缀删，所以主站一清就连它带记录一起没。
+     日志不是学习数据，清空时一起抹掉 */
+  'ekz-debug-log-v2',
   'drawn.prefs.v1','drawn.paletteOrder.v1','drawn.customColors.v2'];
 /* 【2026-10-04 补】ekz-ink-bk- / ekz-ink-bkts- 是 mark-engine 落笔时同步写的
    localStorage 备份和它的写入时刻（为了平板刷新不丢笔迹）。
