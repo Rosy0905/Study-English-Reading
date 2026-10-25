@@ -632,6 +632,9 @@ function closeNotesDB(){
 /* 键名必须与代码里实际用的完全一致。改这里之前先 grep 一遍 setItem。 */
 const CLEAR_LS_EXACT=['ekz.favs','ekz.done','ekz.recent','ekz-migrated',
   'ekz-split-ratio','ekz-rv-split-ratio',
+  /* 【2026-10-25 补】荧光笔浓度偏好 + 复盘左右栏宽，原来都不在表里，
+     清空后这三份缓存还留着，主站同步球会显示阅读站仍有数据 */
+  'ekz-hl-alpha','ekz-rv-lvlock','ekz-rv-rvlock',
   'drawn.prefs.v1','drawn.paletteOrder.v1','drawn.customColors.v2'];
 /* 【2026-10-04 补】ekz-ink-bk- / ekz-ink-bkts- 是 mark-engine 落笔时同步写的
    localStorage 备份和它的写入时刻（为了平板刷新不丢笔迹）。
