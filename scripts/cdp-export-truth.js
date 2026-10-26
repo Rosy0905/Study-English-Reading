@@ -1,6 +1,6 @@
 /* cdp-export-truth.js —— 查"导出显示无数据"的真因。
  *
- * 现象：小0主人在 2017t3 做题页点导出，提示"还没有笔记哦"（= getAllNotes() 返回空）。
+ * 现象：在 2017t3 做题页点导出，提示"还没有笔记哦"（= getAllNotes() 返回空）。
  * 可她的 2017t3 明明有 275 笔批注（article 78 + question 197），且引擎读得到。
  *
  * 关键怀疑：导出读的是 notes 表，而批注存的是**同表不同 id 形态**，
@@ -136,7 +136,7 @@ function ok(c, m) { if (c) { pass++; console.log('  OK   ' + m); } else { fail++
          · 导出 PDF     → exportPdfPapers()
          · 清空所有数据  → confirmWipeAll()
        只点 bkExportBtn 当然等不到 Blob —— 得再点菜单里的【备份 JSON】。
-       她说的"导出直接显示无数据"就是这条链，需要连点两次才看得到。 */
+       「导出直接显示无数据」就是这条链，需要连点两次才看得到。 */
     const payload = await ev(`(function(){
       function findMenuItem(label){
         var all = document.querySelectorAll('button,div,a,li');

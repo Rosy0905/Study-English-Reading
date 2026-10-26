@@ -428,7 +428,7 @@
 
   /* 复盘页右栏在各版本模板里写法不同，逐级兜底。
      （原来这个函数被放在做题页的 if 块里，复盘页根本访问不到 ——
-      她 2026-10-03 反馈"第 2 页没有分隔线、翻到别的页又冒出来"就是这个原因。） */
+      「第 2 页没有分隔线、翻到别的页又冒出来」就是这个原因。） */
   function rightPanelEl() {
     var lay = document.getElementById('layout') || document.querySelector('.layout');
     return document.querySelector('.rightPanel') ||
@@ -446,7 +446,7 @@
     var lp = document.getElementById('leftPanel');
     /* 各版本复盘页右栏写法不一：有的 .rightPanel，有的只有 #rightScroll / .layout .panel:last-child。
        原来只查 .rightPanel，2014-text1 这类页面直接 return，分隔条功能整个不生效 ——
-       她反馈"第 2 页没有分隔线、翻到别的页又冒出来"就是这个原因。 */
+       「第 2 页没有分隔线、翻到别的页又冒出来」就是这个原因。 */
     var rp = rightPanelEl();
     if (!layoutEl || !lp || !rp) return;
     layoutEl.style.position = 'relative';
@@ -700,7 +700,7 @@
   /* 缩放比例改为「每页各存一份」。
      【2026-10-04 修正】原来所有页共用一个 rvZoom：在文章页放大后 rvZoom 已经 >1，
      此时再去捏合题目页，起始值就是被文章页抬高的，clamp 到 1 之后再也回不去
-     （她反馈"放大后怎么缩不回来"的直接原因）。现在 article/question 各自独立，
+     （放大后缩不回来的直接原因）。现在 article/question 各自独立，
      互不干扰，复盘沿用 rvZoom。 */
   var zArt = 1, zQue = 1;
   var zArt0 = 1, zQue0 = 1;
@@ -817,7 +817,7 @@
   }
 
   /* ---------- 缩放复位按钮（2026-10-04）----------
-     平板双指捏合偶尔会把比例卡在中途（她反馈"放大后缩不回来"）。
+     平板双指捏合偶尔会把比例卡在中途（放大后缩不回原位）。
      根因待平板日志确认，但不该让她卡在放大状态出不来，
      所以给一个显式出口：只要缩过就浮出按钮，点一下回到 100%。
      捏合在 rvGestures.onPinch 里同步刷新按钮显示。 */

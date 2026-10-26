@@ -92,7 +92,7 @@ function ok(c, m) { if (c) { pass++; console.log('  OK   ' + m); } else { fail++
     })()`);
     console.log('\n标签页B 执行清空: ' + bWipe);
 
-    /* 标签页A 不刷新，直接再读一次 —— 这就是她"清空无效 + 导出 0 条"的现场 */
+    /* 标签页A 不刷新，直接再读一次 —— 这就是「清空无效 + 导出 0 条」的现场 */
     const a2 = await e1(`(async function(){
       try{
         var n = await ekzDB.all();

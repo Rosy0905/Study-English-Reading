@@ -1,4 +1,4 @@
-/* cdp-t3-eraser-data-test.js  —— 复现小0主人 2017-text3 的真实故障
+/* cdp-t3-eraser-data-test.js  —— 复现 2017-text3 的真实故障
  *
  * 她的关键洞察：同一份代码，text3 有问题、text4 没有。
  * 她的备份 JSON 给出了答案（我解析过）：

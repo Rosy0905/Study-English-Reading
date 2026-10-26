@@ -1,5 +1,5 @@
 /* cdp-qpage-geom.js
- * 小0主人 2026-10-04 报的鬼影，**题目页**（questionWrap）。
+ * 2026-10-04 的鬼影，**题目页**（questionWrap）。
  *
  * 她截图里的自检面板（这次读对了）：
  *   articleWrap : 画布显示高  905px / 内部  1696px（DPR=1.874）→ 比值 1.874，正常

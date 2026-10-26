@@ -244,7 +244,7 @@ const url = rel => "http://localhost:8123/" + rel;
   check(/blue/.test(impOkCls) && !/danger/.test(impOkCls), "导入的确认键是蓝色款（" + impOkCls + "）");
   const impOkBg = await js("(function(){var b=document.querySelector('#ekz-exCard .exOk');return b?getComputedStyle(b).backgroundColor:'';})()");
   check(impOkBg === "rgb(74, 128, 186)", "导入确认键已降一档（" + impOkBg + "）");
-  /* 主题色一致性：她 2026-10-03 指出蓝卡片里配粉紫标题"不协调"。
+  /* 主题色一致性：蓝卡片里配粉紫标题不协调。
      根因是 ex-blue 只覆盖了表格和提示条，标题/副标题/边框漏了。
      这三条断言守住它们不会再跑回粉紫。 */
   const impTheme = await js(`(function(){

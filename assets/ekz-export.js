@@ -52,7 +52,7 @@
     '#ekz-exCard .exOk.blue{background:#4a80ba;border-color:#4a80ba;color:#fff;font-weight:600}'+
     '#ekz-exCard .exOk.blue:hover{background:#3d6ba0;border-color:#3d6ba0}'+
     /* ---- 表格式清单（她选的 B 款）：左名右数，横排不断行 ----
-       white-space:nowrap 是关键：她反馈"挤不下换行"，
+       white-space:nowrap 是关键：窄屏会挤到换行，
        所以数字区不换行，标签区过长才省略号。
        底色/字色全部走 ex-red / ex-blue 两个主题类，
        免得清空是红的、导入是粉的、看起来像两套东西。 */
@@ -65,7 +65,7 @@
     '#ekz-exCard .exTable .r.tot{background:#f8f5fb;border-top:1px solid #ece7f0}'+
     '#ekz-exCard .exTable .r.tot .k{color:#5a4a70;font-weight:600}'+
     '#ekz-exCard .exTable .r.tot .v{font-weight:700}'+
-    /* ---- 红主题（清空）：她说"红得稍淡一点点"，
+    /* ---- 红主题（清空）：红色调淡一档，
        所以只把原来那组正红整体降一档饱和，色相仍然要是红，
        不能降成土褐色（我第一版犯过这个错）。 ---- */
     '#ekz-exCard.ex-red .exTable{border-color:#f2d6d3}'+
@@ -116,7 +116,7 @@
 
   /* 当前打开着的弹窗。菜单点进二次确认时原地换内容，
      遮罩不消失 —— 原来先关菜单、读完库统计再新建一个，
-     中间那一下页面全露出来，看起来就是"猛闪一下"。 */
+     中间那一下页面全露出来，看起来就会闪一下。 */
   let live = null;
 
   function close(mask) {
