@@ -52,6 +52,14 @@ SUBS = [
     # P6 同步渲染的赋值点（2010t1/t2：img.src=src; 紧跟 const place=）
     (re.compile(r"img\.src=src;(\s*const place=)"),
      r"loadAsset(ctx.asset,function(v){img.src=v;});\1"),
+    # P7 老模板的图片渲染入口（2011t2 / 2013t1 / 2014t2）：
+    #   leftStage.className='leftStage';const src=ASSETS[ctx.asset];if(!src)return;
+    # 这三篇没有 mode 前置判断，取 src 后靠 if(!src) 判空，P5 覆盖不到
+    (re.compile(r"leftStage\.className='leftStage';const src=ASSETS\[ctx\.asset\];if\(!src\)return;"),
+     r"leftStage.className='leftStage';if(!ASSET_KEYS.includes(ctx.asset))return;"),
+    # P8 同一模板的赋值点：img.onload=schedule;img.src=src;if(img.complete)schedule();
+    (re.compile(r"img\.onload=schedule;img\.src=src;if\(img\.complete\)schedule\(\);"),
+     r"img.onload=schedule;loadAsset(ctx.asset,function(v){img.src=v;if(img.complete)schedule();});"),
 ]
 
 def extract_assets(src):

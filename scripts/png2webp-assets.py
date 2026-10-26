@@ -50,6 +50,44 @@ def convert(path, dry=False):
         os.replace(tmp, path)
     return (im.size, len(raw), len(d))
 
+def convert_do_html(path, dry=False):
+    """做题页内嵌图（一篇 2 张，文章页 + 题目页）PNG → 无损 WebP。
+
+    做题页和复盘页不一样：图直接内嵌在 HTML 里、可能有 2 处 base64，
+    所以不能套上面的 convert()（它 assert 只有 1 处）。
+    每张图都做像素级校验，尺寸或像素不一致直接抛错，不写文件。
+    """
+    b = open(path, 'rb').read()
+    ms = list(PAT.finditer(b))
+    if not ms:
+        return None
+    out = bytearray()
+    last = 0
+    before = after = 0
+    for m in ms:
+        b64 = m.group(1)
+        raw = base64.b64decode(b64 + b'=' * (-len(b64) % 4))
+        im = Image.open(io.BytesIO(raw))
+        px0 = im.convert('RGBA').tobytes()
+        o = io.BytesIO()
+        im.save(o, 'WEBP', lossless=True, quality=100, method=4)
+        d = o.getvalue()
+        back = Image.open(io.BytesIO(d))
+        assert back.size == im.size, f'{path}: 尺寸变了'
+        assert back.convert('RGBA').tobytes() == px0, f'{path}: 像素不一致'
+        out += b[last:m.start()]
+        out += b'data:image/webp;base64,' + base64.b64encode(d)
+        last = m.end()
+        before += len(raw)
+        after += len(d)
+    out += b[last:]
+    if not dry:
+        tmp = path + '.tmp'
+        open(tmp, 'wb').write(bytes(out))
+        os.replace(tmp, path)
+    return (len(ms), before, after)
+
+
 if __name__ == '__main__':
     dry = '--dry' in sys.argv
     files = sorted(glob.glob(os.path.join(ROOT, 'library', '*', '*.assets', '*.js')))
@@ -65,6 +103,27 @@ if __name__ == '__main__':
         if done % 40 == 0:
             print(f'  {done} 张 … 已省 {(a-c)/1024/1024:.1f}MB', flush=True)
     print(f'\n转换 {done} 张，跳过 {skip} 个（已是 webp/jpeg）')
-    print(f'体积 {a/1024/1024:.1f}MB → {c/1024/1024:.1f}MB，省 {(1-c/a)*100:.0f}%')
+    if a:
+        print(f'体积 {a/1024/1024:.1f}MB → {c/1024/1024:.1f}MB，省 {(1-c/a)*100:.0f}%')
     for r, p, o1, o2 in sorted(worst)[-5:]:
         print(f'  最差 {p}: {o1/1024:.0f}K → {o2/1024:.0f}K ({r*100:.0f}%)')
+
+    # 做题页内嵌图：同一批图片，只是直接打在 HTML 里（一篇 2 张）
+    do_files = sorted(glob.glob(os.path.join(ROOT, 'library', '*', '*-做题.html')))
+    do_done = do_skip = 0
+    da = dc = 0
+    for f in do_files:
+        r = convert_do_html(f, dry)
+        if r is None:
+            do_skip += 1
+            continue
+        n, o1, o2 = r
+        do_done += 1
+        da += o1
+        dc += o2
+        print(f'  做题页 {os.path.basename(f)}: {n} 张 {o1/1024:.0f}K → {o2/1024:.0f}K', flush=True)
+    if do_done:
+        print(f'\n做题页转换 {do_done} 篇，跳过 {do_skip} 篇（已是 webp）')
+        print(f'内嵌图体积 {da/1024/1024:.1f}MB → {dc/1024/1024:.1f}MB，省 {(1-dc/da)*100:.0f}%')
+    else:
+        print(f'\n做题页全部已是 webp，跳过 {do_skip} 篇')

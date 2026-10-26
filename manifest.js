@@ -39,6 +39,8 @@ const LIBRARY = {
     {
       id: "2010-text3",
       label: "Text 3",
+      zuoti: "library/2010/2010-text3-做题.html",
+      fupan: "library/2010/2010-text3-复盘.html",
       note:  "notes.html?id=2010-text3",
       underlay: [
         "library/2010/2010-text3-article.png",
@@ -76,6 +78,7 @@ const LIBRARY = {
       id: "2011-text2",
       label: "Text 2",
       zuoti: "library/2011/2011-text2-做题.html",
+      fupan: "library/2011/2011-text2-复盘.html",
       note:  "notes.html?id=2011-text2",
       underlay: [
         "library/2011/2011-text2-article.png",
@@ -98,6 +101,8 @@ const LIBRARY = {
     {
       id: "2011-text4",
       label: "Text 4",
+      zuoti: "library/2011/2011-text4-做题.html",
+      fupan: "library/2011/2011-text4-复盘.html",
       note:  "notes.html?id=2011-text4",
       underlay: [
         "library/2011/2011-text4-article.png",
@@ -110,6 +115,8 @@ const LIBRARY = {
     {
       id: "2012-text1",
       label: "Text 1",
+      zuoti: "library/2012/2012-text1-做题.html",
+      fupan: "library/2012/2012-text1-复盘.html",
       note:  "notes.html?id=2012-text1",
       underlay: [
         "library/2012/2012-text1-article.png",
@@ -120,6 +127,8 @@ const LIBRARY = {
     {
       id: "2012-text2",
       label: "Text 2",
+      zuoti: "library/2012/2012-text2-做题.html",
+      fupan: "library/2012/2012-text2-复盘.html",
       note:  "notes.html?id=2012-text2",
       underlay: [
         "library/2012/2012-text2-article.png",
@@ -142,6 +151,8 @@ const LIBRARY = {
     {
       id: "2012-text4",
       label: "Text 4",
+      zuoti: "library/2012/2012-text4-做题.html",
+      fupan: "library/2012/2012-text4-复盘.html",
       note:  "notes.html?id=2012-text4",
       underlay: [
         "library/2012/2012-text4-article.png",
@@ -155,6 +166,7 @@ const LIBRARY = {
       id: "2013-text1",
       label: "Text 1",
       zuoti: "library/2013/2013-text1-做题.html",
+      fupan: "library/2013/2013-text1-复盘.html",
       note:  "notes.html?id=2013-text1",
       underlay: [
         "library/2013/2013-text1-article.png",
@@ -189,6 +201,8 @@ const LIBRARY = {
     {
       id: "2013-text4",
       label: "Text 4",
+      zuoti: "library/2013/2013-text4-做题.html",
+      fupan: "library/2013/2013-text4-复盘.html",
       note:  "notes.html?id=2013-text4",
       underlay: [
         "library/2013/2013-text4-article.png",
@@ -214,6 +228,7 @@ const LIBRARY = {
       id: "2014-text2",
       label: "Text 2",
       zuoti: "library/2014/2014-text2-做题.html",
+      fupan: "library/2014/2014-text2-复盘.html",
       note:  "notes.html?id=2014-text2",
       underlay: [
         "library/2014/2014-text2-article.png",
@@ -262,6 +277,8 @@ const LIBRARY = {
     {
       id: "2015-text2",
       label: "Text 2",
+      zuoti: "library/2015/2015-text2-做题.html",
+      fupan: "library/2015/2015-text2-复盘.html",
       note:  "notes.html?id=2015-text2",
       underlay: [
         "library/2015/2015-text2-article.png",
@@ -284,6 +301,8 @@ const LIBRARY = {
     {
       id: "2015-text4",
       label: "Text 4",
+      zuoti: "library/2015/2015-text4-做题.html",
+      fupan: "library/2015/2015-text4-复盘.html",
       note:  "notes.html?id=2015-text4",
       underlay: [
         "library/2015/2015-text4-article.png",
@@ -308,6 +327,8 @@ const LIBRARY = {
     {
       id: "2016-text2",
       label: "Text 2",
+      zuoti: "library/2016/2016-text2-做题.html",
+      fupan: "library/2016/2016-text2-复盘.html",
       note:  "notes.html?id=2016-text2",
       underlay: [
         "library/2016/2016-text2-article.png",
@@ -318,6 +339,8 @@ const LIBRARY = {
     {
       id: "2016-text3",
       label: "Text 3",
+      zuoti: "library/2016/2016-text3-做题.html",
+      fupan: "library/2016/2016-text3-复盘.html",
       note:  "notes.html?id=2016-text3",
       underlay: [
         "library/2016/2016-text3-article.png",
@@ -392,6 +415,8 @@ const LIBRARY = {
     {
       id: "2018-text1",
       label: "Text 1",
+      zuoti: "library/2018/2018-text1-做题.html",
+      fupan: "library/2018/2018-text1-复盘.html",
       note:  "notes.html?id=2018-text1",
       underlay: [
         "library/2018/2018-text1-article.png",
@@ -490,6 +515,8 @@ const LIBRARY = {
     {
       id: "2020-text1",
       label: "Text 1",
+      zuoti: "library/2020/2020-text1-做题.html",
+      fupan: "library/2020/2020-text1-复盘.html",
       note:  "notes.html?id=2020-text1",
       underlay: [
         "library/2020/2020-text1-article.png",
@@ -500,6 +527,8 @@ const LIBRARY = {
     {
       id: "2020-text2",
       label: "Text 2",
+      zuoti: "library/2020/2020-text2-做题.html",
+      fupan: "library/2020/2020-text2-复盘.html",
       note:  "notes.html?id=2020-text2",
       underlay: [
         "library/2020/2020-text2-article.png",
@@ -510,6 +539,8 @@ const LIBRARY = {
     {
       id: "2020-text3",
       label: "Text 3",
+      zuoti: "library/2020/2020-text3-做题.html",
+      fupan: "library/2020/2020-text3-复盘.html",
       note:  "notes.html?id=2020-text3",
       underlay: [
         "library/2020/2020-text3-article.png",
@@ -570,6 +601,8 @@ const LIBRARY = {
     {
       id: "2021-text4",
       label: "Text 4",
+      zuoti: "library/2021/2021-text4-做题.html",
+      fupan: "library/2021/2021-text4-复盘.html",
       note:  "notes.html?id=2021-text4",
       underlay: [
         "library/2021/2021-text4-article.png",
@@ -582,6 +615,8 @@ const LIBRARY = {
     {
       id: "2022-text1",
       label: "Text 1",
+      zuoti: "library/2022/2022-text1-做题.html",
+      fupan: "library/2022/2022-text1-复盘.html",
       note:  "notes.html?id=2022-text1",
       underlay: [
         "library/2022/2022-text1-article.png",
@@ -592,6 +627,8 @@ const LIBRARY = {
     {
       id: "2022-text2",
       label: "Text 2",
+      zuoti: "library/2022/2022-text2-做题.html",
+      fupan: "library/2022/2022-text2-复盘.html",
       note:  "notes.html?id=2022-text2",
       underlay: [
         "library/2022/2022-text2-article.png",
@@ -602,6 +639,8 @@ const LIBRARY = {
     {
       id: "2022-text3",
       label: "Text 3",
+      zuoti: "library/2022/2022-text3-做题.html",
+      fupan: "library/2022/2022-text3-复盘.html",
       note:  "notes.html?id=2022-text3",
       underlay: [
         "library/2022/2022-text3-article.png",
@@ -612,6 +651,8 @@ const LIBRARY = {
     {
       id: "2022-text4",
       label: "Text 4",
+      zuoti: "library/2022/2022-text4-做题.html",
+      fupan: "library/2022/2022-text4-复盘.html",
       note:  "notes.html?id=2022-text4",
       underlay: [
         "library/2022/2022-text4-article.png",
@@ -624,6 +665,8 @@ const LIBRARY = {
     {
       id: "2023-text1",
       label: "Text 1",
+      zuoti: "library/2023/2023-text1-做题.html",
+      fupan: "library/2023/2023-text1-复盘.html",
       note:  "notes.html?id=2023-text1",
       underlay: [
         "library/2023/2023-text1-article.png",
@@ -634,6 +677,8 @@ const LIBRARY = {
     {
       id: "2023-text2",
       label: "Text 2",
+      zuoti: "library/2023/2023-text2-做题.html",
+      fupan: "library/2023/2023-text2-复盘.html",
       note:  "notes.html?id=2023-text2",
       underlay: [
         "library/2023/2023-text2-article.png",
@@ -644,6 +689,8 @@ const LIBRARY = {
     {
       id: "2023-text3",
       label: "Text 3",
+      zuoti: "library/2023/2023-text3-做题.html",
+      fupan: "library/2023/2023-text3-复盘.html",
       note:  "notes.html?id=2023-text3",
       underlay: [
         "library/2023/2023-text3-article.png",
@@ -654,6 +701,8 @@ const LIBRARY = {
     {
       id: "2023-text4",
       label: "Text 4",
+      zuoti: "library/2023/2023-text4-做题.html",
+      fupan: "library/2023/2023-text4-复盘.html",
       note:  "notes.html?id=2023-text4",
       underlay: [
         "library/2023/2023-text4-article.png",
@@ -666,6 +715,8 @@ const LIBRARY = {
     {
       id: "2024-text1",
       label: "Text 1",
+      zuoti: "library/2024/2024-text1-做题.html",
+      fupan: "library/2024/2024-text1-复盘.html",
       note:  "notes.html?id=2024-text1",
       underlay: [
         "library/2024/2024-text1-article.png",
@@ -700,6 +751,8 @@ const LIBRARY = {
     {
       id: "2024-text4",
       label: "Text 4",
+      zuoti: "library/2024/2024-text4-做题.html",
+      fupan: "library/2024/2024-text4-复盘.html",
       note:  "notes.html?id=2024-text4",
       underlay: [
         "library/2024/2024-text4-article.png",
@@ -712,6 +765,8 @@ const LIBRARY = {
     {
       id: "2025-text1",
       label: "Text 1",
+      zuoti: "library/2025/2025-text1-做题.html",
+      fupan: "library/2025/2025-text1-复盘.html",
       note:  "notes.html?id=2025-text1",
       underlay: [
         "library/2025/2025-text1-article.png",
